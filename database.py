@@ -37,6 +37,8 @@ def init_db(app):
                 user_id INTEGER UNIQUE NOT NULL,
                 level TEXT DEFAULT 'intermediate',
                 learning_style TEXT DEFAULT 'mixed',
+                depth TEXT DEFAULT 'standard',
+                goal TEXT DEFAULT 'understand',
                 interests TEXT DEFAULT '[]',
                 custom_instructions TEXT DEFAULT '',
                 onboarding_done INTEGER DEFAULT 0,
@@ -89,4 +91,36 @@ def init_db(app):
             );
         ''')
         db.commit()
+        _migrate(db)
         print("✓ DB inicializada")
+
+def _migrate(db):
+    """Add columns that may be missing from a DB created by an older version."""
+    migrations = {
+        'user_profiles': {
+            'depth': "ALTER TABLE user_profiles ADD COLUMN depth TEXT DEFAULT 'standard'",
+            'goal': "ALTER TABLE user_profiles ADD COLUMN goal TEXT DEFAULT 'understand'",
+        },
+        'books': {
+            'content_type': "ALTER TABLE books ADD COLUMN content_type TEXT DEFAULT 'academic'",
+            'source_type': "ALTER TABLE books ADD COLUMN source_type TEXT DEFAULT 'pdf'",
+            'source_url': "ALTER TABLE books ADD COLUMN source_url TEXT",
+            'tools_frameworks': "ALTER TABLE books ADD COLUMN tools_frameworks TEXT",
+            'action_items': "ALTER TABLE books ADD COLUMN action_items TEXT",
+            'subject_link': "ALTER TABLE books ADD COLUMN subject_link TEXT DEFAULT ''",
+            'user_id': "ALTER TABLE books ADD COLUMN user_id INTEGER",
+        },
+        'chat_messages': {
+            'user_id': "ALTER TABLE chat_messages ADD COLUMN user_id INTEGER",
+        },
+    }
+    for table, cols in migrations.items():
+        existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+        for col_name, ddl in cols.items():
+            if col_name not in existing:
+                try:
+                    db.execute(ddl)
+                    print(f"✓ Migración: agregada columna {table}.{col_name}")
+                except Exception as e:
+                    print(f"⚠ No se pudo agregar {table}.{col_name}: {e}")
+    db.commit()

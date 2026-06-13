@@ -125,13 +125,14 @@ def register_onboarding_routes(app):
         instructions = build_profile_instructions(profile_data)
 
         db.execute('''
-            INSERT INTO user_profiles (user_id, level, learning_style, interests, custom_instructions, onboarding_done)
-            VALUES (?,?,?,?,?,1)
+            INSERT INTO user_profiles (user_id, level, learning_style, depth, goal, interests, custom_instructions, onboarding_done)
+            VALUES (?,?,?,?,?,?,?,1)
             ON CONFLICT(user_id) DO UPDATE SET
                 level=excluded.level, learning_style=excluded.learning_style,
+                depth=excluded.depth, goal=excluded.goal,
                 interests=excluded.interests, custom_instructions=excluded.custom_instructions,
                 onboarding_done=1, updated_at=CURRENT_TIMESTAMP
-        ''', (user_id, level, style, json.dumps(interests), custom))
+        ''', (user_id, level, style, depth, goal, json.dumps(interests), custom))
         db.commit()
         return jsonify({'ok': True, 'instructions': instructions})
 
@@ -153,12 +154,13 @@ def get_user_profile_instructions(user_id):
     profile = db.execute('SELECT * FROM user_profiles WHERE user_id=?', (user_id,)).fetchone()
     if not profile:
         return ''
-    try: interests = json.loads(profile['interests'])
+    profile_dict = dict(profile)
+    try: interests = json.loads(profile_dict['interests'])
     except: interests = []
     return build_profile_instructions({
-        'level': profile['level'],
-        'style': profile['learning_style'],
-        'depth': profile.get('depth', 'standard'),
+        'level': profile_dict.get('level'),
+        'style': profile_dict.get('learning_style'),
+        'depth': profile_dict.get('depth', 'standard'),
         'interests': interests,
-        'custom_instructions': profile['custom_instructions'] or ''
+        'custom_instructions': profile_dict.get('custom_instructions') or ''
     })
