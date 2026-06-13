@@ -19,6 +19,9 @@ register_auth_routes(app)
 register_onboarding_routes(app)
 register_academic_routes(app)
 
+# Initialize DB on import (required for gunicorn, since __main__ block won't run)
+init_db(app)
+
 ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic'}
 
 def allowed_file(filename):
