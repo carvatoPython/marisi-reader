@@ -24,6 +24,14 @@ init_db(app)
 
 ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic'}
 
+def get_api_key(db, user_id):
+    """Prefer a project-wide key set in Railway env vars; fallback to the user's own key."""
+    env_key = os.environ.get('OPENAI_API_KEY', '').strip()
+    if env_key:
+        return env_key
+    user = db.execute('SELECT api_key_enc FROM users WHERE id=?', (user_id,)).fetchone()
+    return (user['api_key_enc'] if user else '') or ''
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.',1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -109,9 +117,8 @@ def get_content_types():
 def upload_content():
     user_id = session['user_id']
     db = get_db()
-    user = db.execute('SELECT api_key_enc FROM users WHERE id=?', (user_id,)).fetchone()
-    api_key = user['api_key_enc'] if user else ''
-    if not api_key: return jsonify({'error':'Configura tu API key de OpenAI en el perfil'}), 400
+    api_key = get_api_key(db, user_id)
+    if not api_key: return jsonify({'error':'No hay una API key de OpenAI configurada. Pídele al administrador que configure OPENAI_API_KEY en Railway, o agrega la tuya en Configuración.'}), 400
 
     source_type = request.form.get('source_type','pdf')
     profile_instructions = get_user_profile_instructions(user_id)
@@ -126,7 +133,8 @@ def upload_content():
         try:
             result = process_source('url', source_url, api_key, profile_instructions)
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            app.logger.exception('Error processing URL')
+            return jsonify({'error': f'Error al procesar la URL: {str(e)}'}), 500
     else:
         if 'file' not in request.files: return jsonify({'error':'No se envió archivo'}), 400
         file = request.files['file']
@@ -140,7 +148,8 @@ def upload_content():
         try:
             result = process_source(detected_type, filepath, api_key, profile_instructions)
         except Exception as e:
-            return jsonify({'error': str(e)}), 500
+            app.logger.exception('Error processing file')
+            return jsonify({'error': f'Error al analizar: {str(e)}'}), 500
 
     cur = db.execute('''
         INSERT INTO books (user_id,title,author,year,branch,content_type,pages,source_type,source_url,
@@ -181,9 +190,8 @@ def chat_with_book(book_id):
     user_message = body.get('message','').strip()
     if not user_message: return jsonify({'error':'Mensaje vacío'}), 400
 
-    user = db.execute('SELECT api_key_enc FROM users WHERE id=?', (user_id,)).fetchone()
-    api_key = user['api_key_enc'] if user else ''
-    if not api_key: return jsonify({'error':'Configura tu API key'}), 400
+    api_key = get_api_key(db, user_id)
+    if not api_key: return jsonify({'error':'No hay una API key de OpenAI configurada'}), 400
 
     book = db.execute('SELECT * FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
     if not book: return jsonify({'error':'Libro no encontrado'}), 404

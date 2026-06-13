@@ -84,8 +84,15 @@ def register_academic_routes(app):
     def upload_academic():
         user_id = session['user_id']
         db = get_db()
-        user = db.execute('SELECT api_key_enc FROM users WHERE id=?', (user_id,)).fetchone()
-        api_key = user['api_key_enc'] if user else ''
+        import os
+        env_key = os.environ.get('OPENAI_API_KEY', '').strip()
+        if env_key:
+            api_key = env_key
+        else:
+            user = db.execute('SELECT api_key_enc FROM users WHERE id=?', (user_id,)).fetchone()
+            api_key = (user['api_key_enc'] if user else '') or ''
+        if not api_key:
+            return jsonify({'error': 'No hay una API key de OpenAI configurada'}), 400
 
         doc_type = request.form.get('doc_type', 'malla')
 
