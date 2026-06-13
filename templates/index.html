@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Marisi Reader">
+  <meta name="theme-color" content="#0e0e18">
+  <link rel="apple-touch-icon" href="/static/icons/icon-192.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <title>Marisi Reader</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<!-- AUTH SCREEN -->
+<div id="screen-auth" class="screen active">
+  <div class="auth-wrap">
+    <div class="auth-logo">
+      <span class="logo-icon">⚖️</span>
+      <h1>Marisi Reader</h1>
+      <p>Tu biblioteca inteligente</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="tab-btn active" onclick="switchTab('login')">Entrar</button>
+      <button class="tab-btn" onclick="switchTab('register')">Registrarse</button>
+    </div>
+    <!-- LOGIN -->
+    <div id="tab-login" class="auth-form active">
+      <div class="field"><label>Usuario</label><input type="text" id="login-username" placeholder="tu_usuario" autocomplete="username"></div>
+      <div class="field"><label>Contraseña</label><input type="password" id="login-password" placeholder="••••••" autocomplete="current-password"></div>
+      <button class="btn-primary" onclick="doLogin()">Entrar →</button>
+    </div>
+    <!-- REGISTER -->
+    <div id="tab-register" class="auth-form">
+      <div class="field"><label>Nombre para mostrar</label><input type="text" id="reg-name" placeholder="Marisi"></div>
+      <div class="field"><label>Usuario (sin espacios)</label><input type="text" id="reg-username" placeholder="marisi" autocomplete="username"></div>
+      <div class="field"><label>Contraseña</label><input type="password" id="reg-password" placeholder="Mín. 6 caracteres" autocomplete="new-password"></div>
+      <div class="field"><label>API Key de OpenAI <span class="muted">(opcional, puedes agregarlo después)</span></label><input type="password" id="reg-apikey" placeholder="sk-..."></div>
+      <button class="btn-primary" onclick="doRegister()">Crear cuenta →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ONBOARDING SCREEN -->
+<div id="screen-onboarding" class="screen">
+  <div class="onboarding-wrap">
+    <div class="onboarding-header">
+      <h2>Cuéntame sobre ti <span>✨</span></h2>
+      <p>Esto me ayuda a personalizar cada análisis para ti</p>
+      <div class="onboarding-progress"><div id="ob-progress-fill" class="ob-progress-fill"></div></div>
+    </div>
+    <div id="onboarding-question" class="ob-question-wrap"></div>
+    <div class="ob-nav">
+      <button id="ob-back" class="btn-ghost" onclick="obBack()" style="display:none">← Atrás</button>
+      <button id="ob-next" class="btn-primary" onclick="obNext()">Siguiente →</button>
+    </div>
+  </div>
+</div>
+
+<!-- MAIN APP -->
+<div id="screen-app" class="screen">
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <span class="logo-sm">⚖️ Marisi Reader</span>
+      <button class="sidebar-close" onclick="toggleSidebar()">✕</button>
+    </div>
+    <div class="sidebar-user" id="sidebar-user"></div>
+    <div class="sidebar-search">
+      <input type="text" id="search-input" placeholder="Buscar…" oninput="filterBooks()">
+    </div>
+    <div class="sidebar-filters">
+      <select id="type-filter" onchange="filterBooks()">
+        <option value="">Todos los tipos</option>
+        <option value="legal">⚖️ Jurídico</option>
+        <option value="tech">💻 Tecnología</option>
+        <option value="data_science">📊 Data Science</option>
+        <option value="personal">🌱 Personal</option>
+        <option value="article">📄 Artículos</option>
+      </select>
+    </div>
+    <div id="book-list" class="book-list">
+      <div class="empty-state"><p>Sin contenido aún.<br>Agrega tu primer libro ↓</p></div>
+    </div>
+    <div class="sidebar-footer">
+      <button class="btn-upload" onclick="openAdd()">＋ Agregar contenido</button>
+      <button class="btn-ghost-sm" onclick="openAcademic()">🎓 Malla / Horario</button>
+      <button class="btn-ghost-sm" onclick="openSettings()">⚙️ Configuración</button>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <button class="hamburger" onclick="toggleSidebar()">☰</button>
+      <div id="topbar-title" class="topbar-title">Biblioteca</div>
+      <div id="topbar-actions" class="topbar-actions"></div>
+    </header>
+
+    <!-- HOME -->
+    <section id="view-home" class="view active">
+      <div class="home-hero">
+        <h2>Bienvenida, <em id="hero-name">...</em> 👋</h2>
+        <p>Sube PDFs, fotos de páginas o pega un link de artículo. La IA lo analiza y lo guarda en tu biblioteca personal.</p>
+      </div>
+      <div id="home-stats" class="home-stats"></div>
+      <div id="recent-books" class="recent-grid"></div>
+    </section>
+
+    <!-- BOOK DETAIL -->
+    <section id="view-book" class="view">
+      <div id="book-content" class="book-content-wrap"></div>
+    </section>
+
+    <!-- CHAT -->
+    <section id="view-chat" class="view">
+      <div id="chat-messages" class="chat-messages"></div>
+      <div class="chat-input-bar">
+        <input type="text" id="chat-input" placeholder="Pregúntale algo al libro…" onkeydown="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()">→</button>
+      </div>
+    </section>
+
+    <!-- ACADEMIC -->
+    <section id="view-academic" class="view">
+      <div class="academic-wrap">
+        <h2 class="section-h2">🎓 Malla y horarios</h2>
+        <p class="muted-text">Sube tu pensum o horario y la IA extraerá tus materias para vincularlas con tus libros.</p>
+        <div class="upload-area" onclick="document.getElementById('academic-file').click()">
+          <span>📄</span>
+          <p>Toca para subir PDF o foto de tu malla / horario</p>
+        </div>
+        <input type="file" id="academic-file" accept=".pdf,.jpg,.jpeg,.png,.webp" style="display:none" onchange="uploadAcademic(this.files[0])">
+        <div id="academic-list" class="academic-list"></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="view-settings" class="view">
+      <div class="settings-wrap">
+        <h2 class="section-h2">⚙️ Configuración</h2>
+        <div class="settings-section">
+          <label class="settings-label">API Key de OpenAI</label>
+          <input type="password" id="settings-apikey" placeholder="sk-..." class="settings-input">
+          <button class="btn-primary-sm" onclick="saveApiKey()">Guardar clave</button>
+        </div>
+        <div class="settings-section">
+          <label class="settings-label">Repetir onboarding</label>
+          <p class="muted-text" style="font-size:0.82rem">Actualiza tu perfil cognitivo</p>
+          <button class="btn-ghost-sm" onclick="restartOnboarding()">Actualizar perfil →</button>
+        </div>
+        <div class="settings-section">
+          <button class="btn-danger-sm" onclick="doLogout()">Cerrar sesión</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- ADD CONTENT MODAL -->
+<div id="modal-add" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header"><h3>Agregar contenido</h3><button onclick="closeModal('modal-add')">✕</button></div>
+    <div class="modal-body">
+      <div class="source-tabs">
+        <button class="src-tab active" onclick="setSrcTab('pdf', this)">📄 PDF</button>
+        <button class="src-tab" onclick="setSrcTab('image', this)">📷 Foto</button>
+        <button class="src-tab" onclick="setSrcTab('url', this)">🔗 URL</button>
+      </div>
+      <div id="src-pdf" class="src-panel active">
+        <div class="drop-zone" onclick="document.getElementById('file-pdf').click()">
+          <span class="drop-icon">📄</span><p>Toca para seleccionar un PDF</p><small>Máx 50 MB</small>
+        </div>
+        <input type="file" id="file-pdf" accept=".pdf" style="display:none" onchange="handleFileSelect(this,'pdf')">
+      </div>
+      <div id="src-image" class="src-panel">
+        <div class="drop-zone" onclick="document.getElementById('file-img').click()">
+          <span class="drop-icon">📷</span><p>Toca para seleccionar una foto</p><small>JPG, PNG, WEBP</small>
+        </div>
+        <input type="file" id="file-img" accept=".jpg,.jpeg,.png,.webp" style="display:none" onchange="handleFileSelect(this,'image')">
+      </div>
+      <div id="src-url" class="src-panel">
+        <label class="field-label">URL del artículo o página web</label>
+        <input type="url" id="url-input" placeholder="https://..." class="url-input">
+      </div>
+      <div id="file-selected-info" class="file-selected hidden"></div>
+      <div id="add-progress" class="upload-progress hidden">
+        <div class="progress-bar"><div id="add-progress-fill" class="progress-fill"></div></div>
+        <p id="add-progress-text">Analizando con IA…</p>
+      </div>
+      <button id="btn-do-add" class="btn-primary" onclick="doAdd()">Analizar y guardar →</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
