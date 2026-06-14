@@ -8,6 +8,7 @@ from academic import register_academic_routes, get_academic_context
 from ingestion import process_source
 from connections import get_connections_for_book, semantic_search, build_connections
 from flashcards import register_flashcard_routes
+from readermind import register_reader_mind_routes
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -21,6 +22,7 @@ register_auth_routes(app)
 register_onboarding_routes(app)
 register_academic_routes(app)
 register_flashcard_routes(app)
+register_reader_mind_routes(app)
 
 # Initialize DB on import (required for gunicorn, since __main__ block won't run)
 init_db(app)
@@ -96,6 +98,8 @@ def delete_book(book_id):
     db.execute('DELETE FROM chat_messages WHERE book_id=? AND user_id=?', (book_id, user_id))
     db.execute('DELETE FROM book_connections WHERE user_id=? AND (book_a_id=? OR book_b_id=?)', (user_id, book_id, book_id))
     db.execute('DELETE FROM flashcard_sets WHERE book_id=? AND user_id=?', (book_id, user_id))
+    db.execute('DELETE FROM reader_reflections WHERE book_id=? AND user_id=?', (book_id, user_id))
+    db.execute('DELETE FROM historical_debates WHERE book_id=? AND user_id=?', (book_id, user_id))
     db.execute('DELETE FROM books WHERE id=? AND user_id=?', (book_id, user_id))
     db.commit()
     return jsonify({'ok': True})

@@ -114,6 +114,52 @@ def init_db(app):
                 UNIQUE(book_id, user_id),
                 FOREIGN KEY (book_id) REFERENCES books(id)
             );
+            CREATE TABLE IF NOT EXISTS reader_mind (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER UNIQUE NOT NULL,
+                -- Onboarding inicial (respuestas crudas)
+                onboarding_answers TEXT DEFAULT '{}',
+                -- Perfil derivado e interpretado por la IA
+                thinking_style TEXT DEFAULT '',
+                emotional_profile TEXT DEFAULT '',
+                critical_tendency TEXT DEFAULT '',
+                learning_preference TEXT DEFAULT '',
+                core_values TEXT DEFAULT '[]',
+                -- Acumulativo: evoluciona con cada libro
+                detected_values TEXT DEFAULT '[]',
+                recurring_tensions TEXT DEFAULT '[]',
+                intellectual_evolution TEXT DEFAULT '[]',
+                thinker_affinities TEXT DEFAULT '[]',
+                thinker_conflicts TEXT DEFAULT '[]',
+                memory_snapshots TEXT DEFAULT '{}',
+                -- Resumen público del perfil (para mostrar en UI)
+                profile_summary TEXT DEFAULT '',
+                intellectual_type TEXT DEFAULT '',
+                main_bias TEXT DEFAULT '',
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            CREATE TABLE IF NOT EXISTS reader_reflections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                phase TEXT NOT NULL,
+                question TEXT NOT NULL,
+                answer TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
+            CREATE TABLE IF NOT EXISTS historical_debates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_id INTEGER NOT NULL,
+                participants TEXT NOT NULL,
+                debate_text TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
         ''')
         db.commit()
         _migrate(db)
@@ -137,6 +183,16 @@ def _migrate(db):
         },
         'chat_messages': {
             'user_id': "ALTER TABLE chat_messages ADD COLUMN user_id INTEGER",
+        },
+        'reader_mind': {
+            'thinking_style': "ALTER TABLE reader_mind ADD COLUMN thinking_style TEXT DEFAULT ''",
+            'emotional_profile': "ALTER TABLE reader_mind ADD COLUMN emotional_profile TEXT DEFAULT ''",
+            'critical_tendency': "ALTER TABLE reader_mind ADD COLUMN critical_tendency TEXT DEFAULT ''",
+            'learning_preference': "ALTER TABLE reader_mind ADD COLUMN learning_preference TEXT DEFAULT ''",
+            'core_values': "ALTER TABLE reader_mind ADD COLUMN core_values TEXT DEFAULT '[]'",
+            'intellectual_type': "ALTER TABLE reader_mind ADD COLUMN intellectual_type TEXT DEFAULT ''",
+            'main_bias': "ALTER TABLE reader_mind ADD COLUMN main_bias TEXT DEFAULT ''",
+            'profile_summary': "ALTER TABLE reader_mind ADD COLUMN profile_summary TEXT DEFAULT ''",
         },
     }
     for table, cols in migrations.items():
