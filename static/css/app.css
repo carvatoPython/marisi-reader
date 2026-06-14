@@ -49,6 +49,7 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .onboarding-header p{color:var(--muted);font-size:.88rem;margin-bottom:1rem}
 .ob-progress-fill{height:3px;background:var(--gold);border-radius:2px;transition:width .4s}
 .onboarding-progress{background:var(--border);border-radius:2px;height:3px;margin-top:1rem}
+.ob-question-wrap{}
 .ob-question{margin-bottom:1.5rem}
 .ob-question h3{font-size:1rem;color:var(--text);margin-bottom:1rem;line-height:1.4}
 .ob-options{display:flex;flex-direction:column;gap:.6rem}
@@ -124,15 +125,8 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .recent-card:hover{border-color:var(--gold);transform:translateY(-2px)}
 .rc-type{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}
 .rc-type.legal{color:var(--gold)}.rc-type.tech{color:var(--tech)}.rc-type.data_science{color:var(--data)}.rc-type.personal{color:var(--personal)}.rc-type.article{color:var(--article)}
-.card-description {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-
-    -webkit-line-clamp: 3;
-    line-clamp: 3;
-
-    overflow: hidden;
-}.rc-author{font-size:.74rem;color:var(--muted)}
+.rc-title{font-size:.86rem;font-weight:500;line-height:1.35;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.rc-author{font-size:.74rem;color:var(--muted)}
 
 /* BOOK DETAIL */
 .book-content-wrap{padding:1.5rem;max-width:760px;width:100%;margin:0 auto}
@@ -263,34 +257,3 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   .sidebar{transform:translateX(0)!important}
   .hamburger{display:none!important}
 }
-
-/* GAME */
-.game-wrap{padding:1.5rem;max-width:600px;margin:0 auto;width:100%}
-.game-intro{text-align:center;display:flex;flex-direction:column;align-items:center;gap:1rem;padding:2rem 0}
-.game-intro-icon{font-size:2.5rem}
-.game-intro h2{font-family:var(--font-serif);font-size:1.3rem;color:var(--text);font-style:italic}
-.game-intro .btn-primary{max-width:260px}
-.game-fragment-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:1.25rem;margin-bottom:1.25rem}
-.game-category{font-size:.7rem;color:var(--gold);text-transform:uppercase;letter-spacing:.08em;margin-bottom:.6rem}
-.game-fragment-text{font-family:var(--font-serif);font-size:1.05rem;line-height:1.7;color:var(--text);font-style:italic}
-.game-progress{display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;font-size:.8rem;color:var(--muted)}
-.game-score{color:var(--gold2);font-weight:500}
-.game-type-badge{display:inline-block;font-size:.72rem;padding:3px 10px;border-radius:20px;margin-bottom:.85rem;border:1px solid}
-.game-type-badge.comp{color:var(--success);background:rgba(62,207,142,.1);border-color:rgba(62,207,142,.25)}
-.game-type-badge.interp{color:var(--accent2);background:rgba(123,110,246,.1);border-color:rgba(123,110,246,.25)}
-.game-question{font-size:1rem;color:var(--text);line-height:1.5;margin-bottom:1rem;font-weight:500}
-.game-options{display:flex;flex-direction:column;gap:.6rem;margin-bottom:1rem}
-.game-option{background:var(--bg2);border:1.5px solid var(--border2);border-radius:var(--radius-sm);padding:.85rem 1rem;text-align:left;cursor:pointer;font-family:var(--font-sans);font-size:.88rem;color:var(--text);transition:all .15s}
-.game-option:hover{border-color:var(--gold)}
-.game-option.correct{border-color:var(--success);background:rgba(62,207,142,.1);color:var(--success)}
-.game-option.incorrect{border-color:var(--danger);background:rgba(240,96,96,.1);color:var(--danger)}
-.game-option.selected{border-color:var(--accent2);background:rgba(123,110,246,.1);color:var(--accent2)}
-.game-feedback{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:.85rem 1rem;font-size:.85rem;color:var(--text);line-height:1.6;margin-bottom:1rem}
-.game-result{text-align:center;display:flex;flex-direction:column;align-items:center;gap:.75rem;padding:1.5rem 0}
-.game-result-icon{font-size:2.5rem}
-.game-result h2{font-family:var(--font-serif);font-size:1.3rem;color:var(--text);font-style:italic}
-.game-result-score{font-size:2.2rem;font-weight:500;color:var(--gold2);font-family:var(--font-serif)}
-.game-insights{width:100%;margin-top:1rem;text-align:left}
-.game-insights-text{background:var(--bg2);border-left:3px solid var(--accent2);border-radius:0 var(--radius-sm) var(--radius-sm) 0;padding:1rem 1.2rem;font-size:.86rem;color:var(--muted);line-height:1.7}
-.game-result-actions{display:flex;gap:.75rem;margin-top:.5rem;width:100%}
-.game-result-actions button{flex:1}
