@@ -157,10 +157,14 @@ def get_user_profile_instructions(user_id):
     profile_dict = dict(profile)
     try: interests = json.loads(profile_dict['interests'])
     except: interests = []
-    return build_profile_instructions({
+    instructions = build_profile_instructions({
         'level': profile_dict.get('level'),
         'style': profile_dict.get('learning_style'),
         'depth': profile_dict.get('depth', 'standard'),
         'interests': interests,
         'custom_instructions': profile_dict.get('custom_instructions') or ''
     })
+    interpretation = profile_dict.get('interpretation_profile') or ''
+    if interpretation.strip():
+        instructions += f"\n\nInsights sobre cómo interpreta y piensa este usuario (obtenidos de juegos de comprensión previos):\n{interpretation.strip()}"
+    return instructions

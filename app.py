@@ -5,6 +5,7 @@ from database import get_db, init_db, close_connection
 from auth import register_auth_routes, login_required, get_current_user
 from onboarding import register_onboarding_routes, get_user_profile_instructions
 from academic import register_academic_routes, get_academic_context
+from games import register_game_routes
 from ingestion import process_source
 
 app = Flask(__name__)
@@ -18,9 +19,13 @@ app.teardown_appcontext(close_connection)
 register_auth_routes(app)
 register_onboarding_routes(app)
 register_academic_routes(app)
+register_game_routes(app)
 
 # Initialize DB on import (required for gunicorn, since __main__ block won't run)
-init_db(app)
+if os.environ.get('DATABASE_URL'):
+    init_db(app)
+else:
+    print("⚠ DATABASE_URL no configurada — la app necesita PostgreSQL para funcionar.")
 
 ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic'}
 
