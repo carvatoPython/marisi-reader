@@ -27,18 +27,16 @@
       <button class="tab-btn active" onclick="switchTab('login')">Entrar</button>
       <button class="tab-btn" onclick="switchTab('register')">Registrarse</button>
     </div>
-    <!-- LOGIN -->
     <div id="tab-login" class="auth-form active">
       <div class="field"><label>Usuario</label><input type="text" id="login-username" placeholder="tu_usuario" autocomplete="username"></div>
       <div class="field"><label>Contraseña</label><input type="password" id="login-password" placeholder="••••••" autocomplete="current-password"></div>
       <button class="btn-primary" onclick="doLogin()">Entrar →</button>
     </div>
-    <!-- REGISTER -->
     <div id="tab-register" class="auth-form">
       <div class="field"><label>Nombre para mostrar</label><input type="text" id="reg-name" placeholder="Marisi"></div>
       <div class="field"><label>Usuario (sin espacios)</label><input type="text" id="reg-username" placeholder="marisi" autocomplete="username"></div>
       <div class="field"><label>Contraseña</label><input type="password" id="reg-password" placeholder="Mín. 6 caracteres" autocomplete="new-password"></div>
-      <div class="field"><label>API Key de OpenAI <span class="muted">(opcional, puedes agregarlo después)</span></label><input type="password" id="reg-apikey" placeholder="sk-..."></div>
+      <div class="field"><label>API Key de OpenAI <span class="muted">(opcional)</span></label><input type="password" id="reg-apikey" placeholder="sk-..."></div>
       <button class="btn-primary" onclick="doRegister()">Crear cuenta →</button>
     </div>
   </div>
@@ -48,9 +46,11 @@
 <div id="screen-onboarding" class="screen">
   <div class="onboarding-wrap">
     <div class="onboarding-header">
-      <h2>Cuéntame sobre ti <span>✨</span></h2>
-      <p>Esto me ayuda a personalizar cada análisis para ti</p>
+      <div id="ob-phase-label" class="ob-phase-label">¿Cómo piensas?</div>
+      <h2 id="ob-main-title">Cuéntame sobre ti <span>✨</span></h2>
+      <p id="ob-subtitle">Esto me ayuda a conocerte y personalizar cada análisis para ti</p>
       <div class="onboarding-progress"><div id="ob-progress-fill" class="ob-progress-fill"></div></div>
+      <div id="ob-step-counter" class="ob-step-counter"></div>
     </div>
     <div id="onboarding-question" class="ob-question-wrap"></div>
     <div class="ob-nav">
@@ -86,6 +86,7 @@
     </div>
     <div class="sidebar-footer">
       <button class="btn-upload" onclick="openAdd()">＋ Agregar contenido</button>
+      <button class="btn-ghost-sm" onclick="openMindProfile()">🧠 Mi perfil intelectual</button>
       <button class="btn-ghost-sm" onclick="openAcademic()">🎓 Malla / Horario</button>
       <button class="btn-ghost-sm" onclick="openSettings()">⚙️ Configuración</button>
     </div>
@@ -110,7 +111,33 @@
 
     <!-- BOOK DETAIL -->
     <section id="view-book" class="view">
-      <div id="book-content" class="book-content-wrap"></div>
+      <!-- Book tabs -->
+      <div class="book-tabs-bar" id="book-tabs-bar">
+        <button class="book-tab active" onclick="switchBookTab('overview')" id="btab-overview">📖 Libro</button>
+        <button class="book-tab" onclick="switchBookTab('reflection')" id="btab-reflection">🪞 Reflexión</button>
+        <button class="book-tab" onclick="switchBookTab('debate')" id="btab-debate">⚔️ Debate</button>
+        <button class="book-tab" onclick="switchBookTab('characters')" id="btab-characters">🎭 Personajes</button>
+        <button class="book-tab" onclick="switchBookTab('memory')" id="btab-memory">🧠 Memoria</button>
+        <button class="book-tab" onclick="switchBookTab('connections')" id="btab-connections">🕸 Conexiones</button>
+      </div>
+      <div id="book-tab-overview" class="book-tab-panel active">
+        <div id="book-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-reflection" class="book-tab-panel">
+        <div id="reflection-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-debate" class="book-tab-panel">
+        <div id="debate-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-characters" class="book-tab-panel">
+        <div id="characters-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-memory" class="book-tab-panel">
+        <div id="memory-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-connections" class="book-tab-panel">
+        <div id="connections-content" class="book-content-wrap"></div>
+      </div>
     </section>
 
     <!-- CHAT -->
@@ -125,6 +152,11 @@
     <!-- GAME -->
     <section id="view-game" class="view">
       <div id="game-content" class="game-wrap"></div>
+    </section>
+
+    <!-- MIND PROFILE -->
+    <section id="view-mind" class="view">
+      <div id="mind-content" class="book-content-wrap"></div>
     </section>
 
     <!-- ACADEMIC -->
@@ -151,8 +183,8 @@
           <button class="btn-primary-sm" onclick="saveApiKey()">Guardar clave</button>
         </div>
         <div class="settings-section">
-          <label class="settings-label">Repetir onboarding</label>
-          <p class="muted-text" style="font-size:0.82rem">Actualiza tu perfil cognitivo</p>
+          <label class="settings-label">Actualizar perfil cognitivo</label>
+          <p class="muted-text" style="font-size:0.82rem">Repite el proceso de familiarización para afinar cómo te conoce Marisi</p>
           <button class="btn-ghost-sm" onclick="restartOnboarding()">Actualizar perfil →</button>
         </div>
         <div class="settings-section">
