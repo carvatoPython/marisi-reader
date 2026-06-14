@@ -89,6 +89,31 @@ def init_db(app):
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (book_id) REFERENCES books(id)
             );
+            CREATE TABLE IF NOT EXISTS book_connections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_a_id INTEGER NOT NULL,
+                book_b_id INTEGER NOT NULL,
+                relation_type TEXT NOT NULL,
+                strength INTEGER DEFAULT 1,
+                summary TEXT,
+                shared_concepts TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, book_a_id, book_b_id),
+                FOREIGN KEY (book_a_id) REFERENCES books(id),
+                FOREIGN KEY (book_b_id) REFERENCES books(id)
+            );
+            CREATE TABLE IF NOT EXISTS flashcard_sets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                cards TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(book_id, user_id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
         ''')
         db.commit()
         _migrate(db)

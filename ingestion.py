@@ -1,4 +1,4 @@
-import os, json, re, base64, io
+import os, json, re, base64
 import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
@@ -116,6 +116,36 @@ def extract_from_url(url, api_key):
     except Exception as e:
         raise ValueError(f"No se pudo acceder a la URL: {str(e)}")
 
+def extract_from_epub(filepath):
+    try:
+        import ebooklib  # type: ignore[import]
+        from ebooklib import epub  # type: ignore[import]
+    except ImportError:
+        raise ValueError("EbookLib no está instalado. Verifica requirements.txt")
+
+    book_epub = epub.read_epub(filepath)
+    texts = []
+    for item in book_epub.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+        soup = BeautifulSoup(item.get_content(), 'html.parser')
+        t = soup.get_text(separator='\n', strip=True)
+        if t:
+            texts.append(t)
+    full_text = '\n'.join(texts)[:MAX_CHARS]
+    pages = max(1, len(full_text.split()) // 250)
+    return full_text, pages
+
+def extract_from_docx(filepath):
+    try:
+        from docx import Document  # type: ignore[import]
+    except ImportError:
+        raise ValueError("python-docx no está instalado. Verifica requirements.txt")
+
+    doc = Document(filepath)
+    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
+    full_text = '\n'.join(paragraphs)[:MAX_CHARS]
+    pages = max(1, len(full_text.split()) // 250)
+    return full_text, pages
+
 def analyze_content(text, pages, content_type_key, api_key, profile_instructions=''):
     client = OpenAI(api_key=api_key)
     ctype = CONTENT_TYPES[content_type_key]
@@ -183,6 +213,10 @@ def process_source(source_type, filepath_or_url, api_key, profile_instructions='
         text, pages = extract_from_image(filepath_or_url, api_key)
     elif source_type == 'url':
         text, pages = extract_from_url(filepath_or_url, api_key)
+    elif source_type == 'epub':
+        text, pages = extract_from_epub(filepath_or_url)
+    elif source_type == 'docx':
+        text, pages = extract_from_docx(filepath_or_url)
     else:
         raise ValueError(f"Tipo de fuente desconocido: {source_type}")
 

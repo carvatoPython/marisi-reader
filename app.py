@@ -1,4 +1,4 @@
-import os, json, secrets
+import os, json, secrets, threading
 from flask import Flask, request, jsonify, render_template, session, g
 from werkzeug.utils import secure_filename
 from database import get_db, init_db, close_connection
@@ -6,6 +6,8 @@ from auth import register_auth_routes, login_required, get_current_user
 from onboarding import register_onboarding_routes, get_user_profile_instructions
 from academic import register_academic_routes, get_academic_context
 from ingestion import process_source
+from connections import get_connections_for_book, semantic_search, build_connections
+from flashcards import register_flashcard_routes
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
@@ -18,11 +20,12 @@ app.teardown_appcontext(close_connection)
 register_auth_routes(app)
 register_onboarding_routes(app)
 register_academic_routes(app)
+register_flashcard_routes(app)
 
 # Initialize DB on import (required for gunicorn, since __main__ block won't run)
 init_db(app)
 
-ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic'}
+ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic','epub','docx'}
 
 def get_api_key(db, user_id):
     """Prefer a project-wide key set in Railway env vars; fallback to the user's own key."""
@@ -91,6 +94,8 @@ def delete_book(book_id):
     db = get_db()
     user_id = session['user_id']
     db.execute('DELETE FROM chat_messages WHERE book_id=? AND user_id=?', (book_id, user_id))
+    db.execute('DELETE FROM book_connections WHERE user_id=? AND (book_a_id=? OR book_b_id=?)', (user_id, book_id, book_id))
+    db.execute('DELETE FROM flashcard_sets WHERE book_id=? AND user_id=?', (book_id, user_id))
     db.execute('DELETE FROM books WHERE id=? AND user_id=?', (book_id, user_id))
     db.commit()
     return jsonify({'ok': True})
@@ -144,7 +149,12 @@ def upload_content():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         ext = filename.rsplit('.',1)[-1].lower()
-        detected_type = 'pdf' if ext == 'pdf' else 'image'
+        if ext == 'pdf':
+            detected_type = 'pdf'
+        elif ext in ('epub', 'docx'):
+            detected_type = ext
+        else:
+            detected_type = 'image'
         try:
             result = process_source(detected_type, filepath, api_key, profile_instructions)
         except Exception as e:
@@ -169,7 +179,24 @@ def upload_content():
          json.dumps(result.get('tools_frameworks',[])),
          json.dumps(result.get('action_items',[]))))
     db.commit()
-    return jsonify({'ok':True,'book_id':cur.lastrowid,'title':result['title'],'content_type':result.get('content_type')})
+
+    new_book_id = cur.lastrowid
+
+    # Construir conexiones en background para no bloquear la respuesta
+    def _bg_connections(user_id, book_id, api_key):
+        import sqlite3, os
+        db2 = sqlite3.connect(os.environ.get('DB_PATH', 'marisi_reader.db'))
+        db2.row_factory = sqlite3.Row
+        try:
+            build_connections(db2, user_id, book_id, api_key)
+        except Exception as e:
+            print(f"⚠ Error en background connections: {e}")
+        finally:
+            db2.close()
+
+    threading.Thread(target=_bg_connections, args=(user_id, new_book_id, api_key), daemon=True).start()
+
+    return jsonify({'ok':True,'book_id':new_book_id,'title':result['title'],'content_type':result.get('content_type')})
 
 # ── CHAT ────────────────────────────────────────────
 @app.route('/api/books/<int:book_id>/chat', methods=['GET'])
@@ -234,6 +261,44 @@ def get_stats():
         t = b['content_type'] or 'other'
         by_type[t] = by_type.get(t, 0) + 1
     return jsonify({'total_books': total, 'total_pages': pages, 'by_type': by_type})
+
+# ── CONNECTIONS ──────────────────────────────────────
+@app.route('/api/books/<int:book_id>/connections', methods=['GET'])
+@login_required
+def get_book_connections(book_id):
+    db = get_db()
+    user_id = session['user_id']
+    return jsonify(get_connections_for_book(db, user_id, book_id))
+
+# ── BÚSQUEDA SEMÁNTICA ───────────────────────────────
+@app.route('/api/search/semantic', methods=['GET'])
+@login_required
+def semantic_search_route():
+    user_id = session['user_id']
+    db = get_db()
+    query = request.args.get('q', '').strip()
+    if not query:
+        return jsonify({'error': 'Parámetro q requerido'}), 400
+    api_key = get_api_key(db, user_id)
+    if not api_key:
+        return jsonify({'error': 'No hay API key configurada'}), 400
+    return jsonify(semantic_search(db, user_id, query, api_key))
+
+# ── LIBROS POR MATERIA ───────────────────────────────
+@app.route('/api/books/by-subject', methods=['GET'])
+@login_required
+def get_books_by_subject():
+    db = get_db()
+    user_id = session['user_id']
+    subject = request.args.get('subject', '').strip()
+    if not subject:
+        return jsonify({'error': 'Parámetro subject requerido'}), 400
+    rows = db.execute(
+        'SELECT id,title,author,branch,content_type,rating,subject_link FROM books '
+        'WHERE user_id=? AND subject_link LIKE ?',
+        (user_id, f'%{subject}%')
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
 
 if __name__ == '__main__':
     init_db(app)
