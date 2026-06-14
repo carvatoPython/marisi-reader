@@ -49,7 +49,6 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .onboarding-header p{color:var(--muted);font-size:.88rem;margin-bottom:1rem}
 .ob-progress-fill{height:3px;background:var(--gold);border-radius:2px;transition:width .4s}
 .onboarding-progress{background:var(--border);border-radius:2px;height:3px;margin-top:1rem}
-.ob-question-wrap{}
 .ob-question{margin-bottom:1.5rem}
 .ob-question h3{font-size:1rem;color:var(--text);margin-bottom:1rem;line-height:1.4}
 .ob-options{display:flex;flex-direction:column;gap:.6rem}
@@ -125,8 +124,15 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
 .recent-card:hover{border-color:var(--gold);transform:translateY(-2px)}
 .rc-type{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em}
 .rc-type.legal{color:var(--gold)}.rc-type.tech{color:var(--tech)}.rc-type.data_science{color:var(--data)}.rc-type.personal{color:var(--personal)}.rc-type.article{color:var(--article)}
-.rc-title{font-size:.86rem;font-weight:500;line-height:1.35;color:var(--text);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-.rc-author{font-size:.74rem;color:var(--muted)}
+.card-description {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+
+    overflow: hidden;
+}.rc-author{font-size:.74rem;color:var(--muted)}
 
 /* BOOK DETAIL */
 .book-content-wrap{padding:1.5rem;max-width:760px;width:100%;margin:0 auto}
