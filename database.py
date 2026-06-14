@@ -74,6 +74,7 @@ def init_db(app):
                 chapter_map TEXT,
                 tools_frameworks TEXT,
                 action_items TEXT,
+                debate_suggestion TEXT DEFAULT '{}',
                 rating INTEGER DEFAULT 0,
                 personal_notes TEXT DEFAULT '',
                 subject_link TEXT DEFAULT '',
@@ -117,22 +118,18 @@ def init_db(app):
             CREATE TABLE IF NOT EXISTS reader_mind (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER UNIQUE NOT NULL,
-                -- Onboarding inicial (respuestas crudas)
                 onboarding_answers TEXT DEFAULT '{}',
-                -- Perfil derivado e interpretado por la IA
                 thinking_style TEXT DEFAULT '',
                 emotional_profile TEXT DEFAULT '',
                 critical_tendency TEXT DEFAULT '',
                 learning_preference TEXT DEFAULT '',
                 core_values TEXT DEFAULT '[]',
-                -- Acumulativo: evoluciona con cada libro
                 detected_values TEXT DEFAULT '[]',
                 recurring_tensions TEXT DEFAULT '[]',
                 intellectual_evolution TEXT DEFAULT '[]',
                 thinker_affinities TEXT DEFAULT '[]',
                 thinker_conflicts TEXT DEFAULT '[]',
                 memory_snapshots TEXT DEFAULT '{}',
-                -- Resumen público del perfil (para mostrar en UI)
                 profile_summary TEXT DEFAULT '',
                 intellectual_type TEXT DEFAULT '',
                 main_bias TEXT DEFAULT '',
@@ -166,7 +163,6 @@ def init_db(app):
         print("✓ DB inicializada")
 
 def _migrate(db):
-    """Add columns that may be missing from a DB created by an older version."""
     migrations = {
         'user_profiles': {
             'depth': "ALTER TABLE user_profiles ADD COLUMN depth TEXT DEFAULT 'standard'",
@@ -180,6 +176,7 @@ def _migrate(db):
             'action_items': "ALTER TABLE books ADD COLUMN action_items TEXT",
             'subject_link': "ALTER TABLE books ADD COLUMN subject_link TEXT DEFAULT ''",
             'user_id': "ALTER TABLE books ADD COLUMN user_id INTEGER",
+            'debate_suggestion': "ALTER TABLE books ADD COLUMN debate_suggestion TEXT DEFAULT '{}'",
         },
         'chat_messages': {
             'user_id': "ALTER TABLE chat_messages ADD COLUMN user_id INTEGER",

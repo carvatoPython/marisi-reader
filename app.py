@@ -24,13 +24,11 @@ register_academic_routes(app)
 register_flashcard_routes(app)
 register_reader_mind_routes(app)
 
-# Initialize DB on import (required for gunicorn, since __main__ block won't run)
 init_db(app)
 
 ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic','epub','docx'}
 
 def get_api_key(db, user_id):
-    """Prefer a project-wide key set in Railway env vars; fallback to the user's own key."""
     env_key = os.environ.get('OPENAI_API_KEY', '').strip()
     if env_key:
         return env_key
@@ -74,6 +72,11 @@ def get_book(book_id):
             try: data[f] = json.loads(data[f])
             except: data[f] = []
         else: data[f] = []
+    if data.get('debate_suggestion'):
+        try: data['debate_suggestion'] = json.loads(data['debate_suggestion'])
+        except: data['debate_suggestion'] = {}
+    else:
+        data['debate_suggestion'] = {}
     return jsonify(data)
 
 @app.route('/api/books/<int:book_id>', methods=['PATCH'])
@@ -127,7 +130,7 @@ def upload_content():
     user_id = session['user_id']
     db = get_db()
     api_key = get_api_key(db, user_id)
-    if not api_key: return jsonify({'error':'No hay una API key de OpenAI configurada. Pídele al administrador que configure OPENAI_API_KEY en Railway, o agrega la tuya en Configuración.'}), 400
+    if not api_key: return jsonify({'error':'No hay una API key de OpenAI configurada.'}), 400
 
     source_type = request.form.get('source_type','pdf')
     profile_instructions = get_user_profile_instructions(user_id)
@@ -168,8 +171,8 @@ def upload_content():
     cur = db.execute('''
         INSERT INTO books (user_id,title,author,year,branch,content_type,pages,source_type,source_url,
             filename,summary,key_concepts,norms,jurisprudence,exam_questions,chapter_map,
-            tools_frameworks,action_items)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            tools_frameworks,action_items,debate_suggestion)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (user_id, result['title'], result.get('author',''), result.get('year','---'),
          result.get('branch','General'), result.get('content_type','personal'),
          result.get('pages',0), source_type, source_url,
@@ -181,15 +184,15 @@ def upload_content():
          json.dumps(result.get('exam_questions',[])),
          json.dumps(result.get('chapter_map',[])),
          json.dumps(result.get('tools_frameworks',[])),
-         json.dumps(result.get('action_items',[]))))
+         json.dumps(result.get('action_items',[])),
+         json.dumps(result.get('debate_suggestion',{}))))
     db.commit()
 
     new_book_id = cur.lastrowid
 
-    # Construir conexiones en background para no bloquear la respuesta
     def _bg_connections(user_id, book_id, api_key):
-        import sqlite3, os
-        db2 = sqlite3.connect(os.environ.get('DB_PATH', 'marisi_reader.db'))
+        import sqlite3, os as _os
+        db2 = sqlite3.connect(_os.environ.get('DB_PATH', 'marisi_reader.db'))
         db2.row_factory = sqlite3.Row
         try:
             build_connections(db2, user_id, book_id, api_key)
