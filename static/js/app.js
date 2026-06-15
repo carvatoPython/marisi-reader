@@ -357,6 +357,10 @@ function renderBookOverview(book, id) {
   const chaps = book.chapter_map||[];
   const tools = book.tools_frameworks||[];
   const actions = book.action_items||[];
+  const why = book.why_this_book_matters||[];
+  const cmap = book.concept_map||[];
+  const debate = book.debate_suggestion||{};
+  const community = book.what_community_says||{};
 
   document.getElementById('book-content').innerHTML = `
     <div class="book-header">
@@ -376,6 +380,55 @@ function renderBookOverview(book, id) {
 
     <div class="section-title">Resumen</div>
     <div class="summary-box">${esc(book.summary||'')}</div>
+
+    ${why.length?`<div class="section-title">¿Por qué este libro puede importarte?</div>
+    <div class="why-matters-grid">${why.map(w=>`<div class="why-card">
+      <div class="why-profile">${esc(w.profile||'')}</div>
+      <div class="why-insight">${esc(w.insight||'')}</div>
+    </div>`).join('')}</div>`:''}
+
+    ${debate.central_tension?`<div class="section-title">La tensión central</div>
+    <div class="debate-hint-card">
+      <div class="debate-hint-tension">⚡ ${esc(debate.central_tension)}</div>
+      ${debate.natural_opponent?`<div class="debate-hint-row">
+        <span class="debate-hint-label">Contradice a:</span>
+        <span class="debate-hint-name">${esc(debate.natural_opponent)}</span>
+      </div>`:''}
+      ${debate.natural_ally?`<div class="debate-hint-row">
+        <span class="debate-hint-label">Resuena con:</span>
+        <span class="debate-hint-name ally">${esc(debate.natural_ally)}</span>
+      </div>`:''}
+      ${debate.reader_position?`<div class="debate-hint-reader">💭 ${esc(debate.reader_position)}</div>`:''}
+      <button class="btn-ghost-sm" style="margin-top:.85rem" onclick="switchBookTab('debate');loadDebate(${id})">
+        Generar debate →
+      </button>
+    </div>`:''}
+
+    ${cmap.length?`<div class="section-title">Mapa de ideas</div>
+    <div class="concept-map-list">${cmap.map(c=>`<div class="cmap-row">
+      <span class="cmap-node">${esc(c.from||'')}</span>
+      <span class="cmap-arrow">→</span>
+      <span class="cmap-relation">${esc(c.relation||'')}</span>
+      <span class="cmap-arrow">→</span>
+      <span class="cmap-node">${esc(c.to||'')}</span>
+    </div>`).join('')}</div>`:''}
+
+    ${(community.most_cited_moment||community.common_misconception||community.community_debate)?`
+    <div class="section-title">Lo que dice la comunidad</div>
+    <div class="community-block">
+      ${community.most_cited_moment?`<div class="community-item">
+        <div class="community-label">💬 Lo que más recuerdan los lectores</div>
+        <div class="community-text">${esc(community.most_cited_moment)}</div>
+      </div>`:''}
+      ${community.common_misconception?`<div class="community-item">
+        <div class="community-label">⚠️ El malentendido más común</div>
+        <div class="community-text">${esc(community.common_misconception)}</div>
+      </div>`:''}
+      ${community.community_debate?`<div class="community-item">
+        <div class="community-label">⚡ El debate que genera</div>
+        <div class="community-text">${esc(community.community_debate)}</div>
+      </div>`:''}
+    </div>`:''}
 
     ${kc.length?`<div class="section-title">Conceptos clave (${kc.length})</div>
     <div class="cards-grid">${kc.map(c=>`<div class="detail-card">

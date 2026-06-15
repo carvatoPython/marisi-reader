@@ -416,3 +416,31 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   .sidebar{transform:translateX(0)!important}
   .hamburger{display:none!important}
 }
+
+/* ── ¿POR QUÉ ESTE LIBRO IMPORTA? ── */
+.why-matters-grid{display:grid;gap:.7rem;margin-bottom:2rem}
+.why-card{background:rgba(201,168,76,.06);border:1px solid rgba(201,168,76,.2);border-radius:var(--radius-sm);padding:1rem 1.1rem}
+.why-profile{font-size:.72rem;text-transform:uppercase;letter-spacing:.08em;color:var(--gold);margin-bottom:.4rem}
+.why-insight{font-size:.88rem;color:var(--text);line-height:1.7}
+
+/* ── TENSIÓN CENTRAL / DEBATE HINT ── */
+.debate-hint-card{background:rgba(123,110,246,.06);border:1px solid rgba(123,110,246,.2);border-radius:var(--radius-sm);padding:1.1rem;margin-bottom:2rem}
+.debate-hint-tension{font-size:.92rem;color:var(--accent2);font-style:italic;line-height:1.5;margin-bottom:.85rem}
+.debate-hint-row{display:flex;align-items:center;gap:.5rem;margin-bottom:.35rem}
+.debate-hint-label{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+.debate-hint-name{font-size:.84rem;color:var(--danger);font-weight:500}
+.debate-hint-name.ally{color:var(--success)}
+.debate-hint-reader{font-size:.82rem;color:var(--muted);font-style:italic;margin-top:.75rem;padding-top:.75rem;border-top:1px solid var(--border);line-height:1.6}
+
+/* ── MAPA DE IDEAS ── */
+.concept-map-list{display:flex;flex-direction:column;gap:.5rem;margin-bottom:2rem}
+.cmap-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;padding:.5rem .75rem;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-sm)}
+.cmap-node{background:var(--bg3);border:1px solid var(--border2);border-radius:20px;padding:3px 10px;font-size:.78rem;color:var(--gold2);white-space:nowrap}
+.cmap-arrow{color:var(--muted);font-size:.8rem;flex-shrink:0}
+.cmap-relation{font-size:.76rem;color:var(--muted);font-style:italic;flex:1;min-width:60px}
+
+/* ── VOZ DE LA COMUNIDAD ── */
+.community-block{display:flex;flex-direction:column;gap:.7rem;margin-bottom:2rem}
+.community-item{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:1rem 1.1rem}
+.community-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:.5rem}
+.community-text{font-size:.88rem;color:var(--text);line-height:1.7}

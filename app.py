@@ -67,7 +67,7 @@ def get_book(book_id):
     book = db.execute('SELECT * FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
     if not book: return jsonify({'error':'Libro no encontrado'}), 404
     data = dict(book)
-    for f in ['key_concepts','norms','jurisprudence','exam_questions','chapter_map','tools_frameworks','action_items']:
+    for f in ['key_concepts','norms','jurisprudence','exam_questions','chapter_map','tools_frameworks','action_items','why_this_book_matters','concept_map']:
         if data.get(f):
             try: data[f] = json.loads(data[f])
             except: data[f] = []
@@ -77,6 +77,11 @@ def get_book(book_id):
         except: data['debate_suggestion'] = {}
     else:
         data['debate_suggestion'] = {}
+    if data.get('what_community_says'):
+        try: data['what_community_says'] = json.loads(data['what_community_says'])
+        except: data['what_community_says'] = {}
+    else:
+        data['what_community_says'] = {}
     return jsonify(data)
 
 @app.route('/api/books/<int:book_id>', methods=['PATCH'])
@@ -171,8 +176,8 @@ def upload_content():
     cur = db.execute('''
         INSERT INTO books (user_id,title,author,year,branch,content_type,pages,source_type,source_url,
             filename,summary,key_concepts,norms,jurisprudence,exam_questions,chapter_map,
-            tools_frameworks,action_items,debate_suggestion)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+            tools_frameworks,action_items,debate_suggestion,why_this_book_matters,concept_map,what_community_says)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
         (user_id, result['title'], result.get('author',''), result.get('year','---'),
          result.get('branch','General'), result.get('content_type','personal'),
          result.get('pages',0), source_type, source_url,
@@ -185,7 +190,10 @@ def upload_content():
          json.dumps(result.get('chapter_map',[])),
          json.dumps(result.get('tools_frameworks',[])),
          json.dumps(result.get('action_items',[])),
-         json.dumps(result.get('debate_suggestion',{}))))
+         json.dumps(result.get('debate_suggestion',{})),
+         json.dumps(result.get('why_this_book_matters',[])),
+         json.dumps(result.get('concept_map',[])),
+         json.dumps(result.get('what_community_says',{}))))
     db.commit()
 
     new_book_id = cur.lastrowid

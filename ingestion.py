@@ -1,3 +1,12 @@
+"""
+ingestion.py — Motor de análisis en 4 pasos
+
+Paso 1: Extraer hechos (trama, personajes, eventos, estructura)
+Paso 2: Extraer temas (conflictos, preguntas filosóficas, tesis)
+Paso 3: Enriquecer con lo que dicen lectores reales (Reddit, Goodreads, comunidades)
+Paso 4: Sintetizar todo conectando conflicto del libro + conflicto del lector
+"""
+
 import os, json, re, base64
 import requests
 from bs4 import BeautifulSoup
@@ -7,197 +16,15 @@ import pdfplumber
 MAX_CHARS = 80000
 
 CONTENT_TYPES = {
-    'legal': {
-        'label': 'Jurídico / Derecho',
-        'fields': ['key_concepts','norms','jurisprudence','exam_questions','chapter_map'],
-    },
-    'tech': {
-        'label': 'Tecnología / Programación',
-        'fields': ['key_concepts','tools_frameworks','exam_questions','chapter_map'],
-    },
-    'data_science': {
-        'label': 'Data Science / IA / ML',
-        'fields': ['key_concepts','tools_frameworks','exam_questions','chapter_map'],
-    },
-    'philosophy': {
-        'label': 'Filosofía / Pensamiento',
-        'fields': ['key_concepts','norms','exam_questions','chapter_map'],
-    },
-    'personal': {
-        'label': 'Desarrollo personal / Negocios',
-        'fields': ['key_concepts','action_items','exam_questions','chapter_map'],
-    },
-    'article': {
-        'label': 'Artículo / Ensayo / Paper',
-        'fields': ['key_concepts','norms','exam_questions'],
-    }
+    'legal':        {'label': 'Jurídico / Derecho'},
+    'tech':         {'label': 'Tecnología / Programación'},
+    'data_science': {'label': 'Data Science / IA / ML'},
+    'philosophy':   {'label': 'Filosofía / Pensamiento'},
+    'personal':     {'label': 'Desarrollo personal / Negocios'},
+    'article':      {'label': 'Artículo / Ensayo / Paper'},
 }
 
-# Prompts de análisis profundo por tipo
-TYPE_ANALYSIS_PROMPTS = {
-    'philosophy': """
-INSTRUCCIONES PARA FILOSOFÍA — Lee con cuidado:
-
-summary (mínimo 200 palabras, NO es resumen):
-  Responde: ¿Cuál es la pregunta HUMANA que le quita el sueño al autor (no la académica)?
-  ¿Por qué millones de personas han leído este libro? ¿Qué momento de vida los lleva a él?
-  ¿Qué encontraron que no esperaban? ¿Dónde choca el libro con lo que la gente cree?
-  Si hay perfil del lector: ¿por qué ESTE libro a ESTA persona en ESTE momento?
-  Usa el contexto de foros y lectores reales si está disponible. Habla en segunda persona cuando tengas el perfil.
-
-key_concepts (mínimo 12):
-  Para cada concepto: qué entiende el AUTOR (no Wikipedia), qué problema resuelve DENTRO del libro,
-  y cómo se conecta con otros conceptos. Muestra la cadena de ideas, no conceptos aislados.
-  Incluye las controversias o malentendidos más comunes si los hay.
-
-norms: Todos los autores/obras/corrientes con los que dialoga — y la posición del autor frente a cada uno.
-
-exam_questions (10): Preguntas que obligan a TOMAR POSICIÓN, no a describir.
-  "¿Camus tiene razón en que...?" no "¿Qué dice Camus sobre...?"
-
-why_this_book_matters (4 perfiles):
-  Por momentos de vida, no por demografía. Específico y humano.
-  Usa lo que dicen los lectores reales de Goodreads/Reddit si está disponible.
-
-concept_map: La cadena de ideas del libro. De la premisa inicial a la conclusión.
-
-debate_suggestion:
-  natural_opponent, natural_ally, central_tension, why.
-  reader_position: dónde se ubica este lector específico en ese debate.
-""",
-    'legal': """
-INSTRUCCIONES PARA DERECHO — Lee con cuidado:
-
-summary (mínimo 180 palabras, NO es resumen):
-  ¿Cuál es el problema jurídico real que aborda? ¿Qué controversia doctrinal genera?
-  ¿Por qué importa para quien lo estudia o practica?
-  ¿Qué diferencia a este libro de los demás sobre el mismo tema?
-  Si hay perfil del lector: conecta con su área de estudio/práctica específica.
-  Usa debates académicos y de foros jurídicos si están disponibles.
-
-key_concepts (mínimo 12):
-  Definición doctrinal rigurosa (no de diccionario), fuente normativa o jurisprudencial,
-  y cómo se aplica en la práctica real. Incluye los debates que genera cada concepto.
-  Muestra cómo los conceptos se encadenan: de la premisa al argumento central.
-
-norms: TODAS las normas con identificación exacta, contenido y debates que generan.
-jurisprudence: Todos los fallos con su ratio decidendi y su impacto doctrinal.
-
-exam_questions (10): Preguntas de análisis jurídico que requieran aplicar conceptos a casos,
-  no solo describir normas.
-
-why_this_book_matters (4 perfiles):
-  Por momento de carrera o práctica. Ej: "Si estás preparando un litigio sobre X..."
-
-concept_map: Cómo los conceptos jurídicos se encadenan en el argumento del autor.
-
-debate_suggestion:
-  natural_opponent: posición doctrinal contraria con autor y argumento específico.
-  natural_ally: escuela o autor que comparte la posición.
-  central_tension: el debate jurídico real.
-""",
-    'tech': """
-INSTRUCCIONES PARA TECNOLOGÍA — Lee con cuidado:
-
-summary (mínimo 150 palabras, NO es resumen):
-  ¿Qué problema real resuelve este conocimiento? ¿Por qué importa aprenderlo ahora?
-  ¿Qué debate existe en la comunidad sobre el enfoque del libro?
-  ¿Qué dicen los desarrolladores experimentados sobre este libro en Stack Overflow, Reddit, Hacker News?
-  Si hay perfil del lector: ¿cómo conecta con lo que está construyendo?
-
-key_concepts (mínimo 10):
-  Qué es, para qué sirve, ejemplo concreto de uso real, cuándo NO usarlo, alternativas.
-  Muestra cómo los conceptos se encadenan: de lo más básico a lo más avanzado.
-
-tools_frameworks: Con casos de uso reales, limitaciones honestas y cuándo preferir alternativas.
-  Incluye lo que dice la comunidad (Reddit, Stack Overflow) sobre cada herramienta.
-
-exam_questions (10): Ejercicios prácticos reales. Problemas que un dev encontraría en producción.
-
-why_this_book_matters (4 perfiles): Por momento de carrera. "Si estás aprendiendo X...", "Si trabajas en Y..."
-
-concept_map: Del concepto más básico al más avanzado, mostrando dependencias.
-
-debate_suggestion:
-  natural_opponent: enfoque o tecnología alternativa que contraargumenta.
-  central_tension: el debate técnico real de la comunidad.
-""",
-    'data_science': """
-INSTRUCCIONES PARA DATA SCIENCE — Lee con cuidado:
-
-summary (mínimo 150 palabras, NO es resumen):
-  ¿Qué problema de datos o ML resuelve? ¿Cuándo necesitas exactamente este conocimiento?
-  ¿Qué dice la comunidad (Kaggle, r/MachineLearning, Towards Data Science) sobre este libro?
-  ¿Qué críticas honestas le hacen? ¿Qué lo hace mejor o peor que alternativas?
-
-key_concepts (mínimo 10):
-  Definición técnica + intuición matemática (sin fórmulas complejas) + caso de uso real +
-  cuándo falla o tiene limitaciones. Muestra la progresión lógica de conceptos.
-
-tools_frameworks: Con trade-offs reales. Qué dice la comunidad sobre cada librería/técnica.
-exam_questions (10): Problemas reales de modelado que requieran tomar decisiones.
-why_this_book_matters (4 perfiles): Por proyecto o nivel de experiencia.
-concept_map: Del dato crudo al modelo al deployment.
-debate_suggestion: El debate metodológico real en la comunidad.
-""",
-    'personal': """
-INSTRUCCIONES PARA DESARROLLO PERSONAL/NEGOCIOS — Lee con cuidado:
-
-summary (mínimo 150 palabras, NO es resumen):
-  ¿Cuál es la promesa REAL del libro (no la del título)?
-  ¿Qué idea del libro incomoda más? ¿Cuál resuena de inmediato?
-  ¿Qué dicen los lectores de Goodreads/Reddit — por qué lo aman o lo odian?
-  ¿Quién debería leerlo y quién probablemente no le saque valor?
-  Si hay perfil del lector: conecta con su situación específica.
-
-key_concepts (mínimo 8):
-  Qué sostiene el autor REALMENTE (puede contradecir el sentido común).
-  Muestra la cadena de ideas: cómo un principio lleva al siguiente.
-  Incluye las críticas más honestas que se le hacen a cada idea.
-
-action_items: Concretos y específicos con contexto real de cuándo aplicarlos.
-exam_questions (10): Preguntas que cuestionen creencias propias, no que recuerden el libro.
-why_this_book_matters (4 perfiles): Por momento de vida. Humano y específico.
-concept_map: Cómo los principios del libro se encadenan.
-debate_suggestion: El debate real sobre si las ideas del libro funcionan o no.
-""",
-    'article': """
-INSTRUCCIONES PARA ARTÍCULO/ENSAYO:
-
-summary (mínimo 100 palabras):
-  ¿Cuál es el argumento real (no el tema)? ¿Qué presupone que el lector va a aceptar?
-  ¿Qué evidencia usa y qué tan sólida es?
-  ¿Qué respuestas o críticas ha generado en la comunidad académica?
-
-key_concepts (5-10): Con la lógica interna de cada argumento y su punto más débil.
-norms: Fuentes usadas y cómo el autor las interpreta (¿fielmente o selectivamente?).
-exam_questions (5): De análisis crítico que evalúen los argumentos.
-why_this_book_matters (3 perfiles): Contextos en que este artículo importa.
-debate_suggestion: La controversia real que genera.
-"""
-}
-
-def detect_content_type(text, api_key):
-    client = OpenAI(api_key=api_key)
-    snippet = text[:3000]
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role":"user","content":f"""Clasifica este texto en UNA categoría:
-- legal (derecho, jurídico, leyes, códigos, jurisprudencia)
-- tech (programación, software, sistemas, ingeniería de software)
-- data_science (machine learning, IA, estadística, datos)
-- philosophy (filosofía, ensayo filosófico, ética, existencialismo, fenomenología, metafísica)
-- personal (desarrollo personal, negocios, emprendimiento, psicología popular, finanzas)
-- article (artículo académico, paper, ensayo corto, nota de análisis)
-
-TEXTO:
-{snippet}
-
-Responde SOLO con la clave."""}],
-        temperature=0, max_tokens=15
-    )
-    detected = response.choices[0].message.content.strip().lower()
-    return detected if detected in CONTENT_TYPES else 'personal'
+# ─── EXTRACCIÓN DE TEXTO ──────────────────────────────────────────────────────
 
 def extract_from_pdf(filepath):
     text = ''; pages = 0
@@ -215,15 +42,13 @@ def extract_from_image(filepath, api_key):
         b64 = base64.b64encode(f.read()).decode()
     ext = filepath.rsplit('.',1)[-1].lower()
     mime = {'jpg':'jpeg','jpeg':'jpeg','png':'png','webp':'webp'}.get(ext,'jpeg')
-    response = client.chat.completions.create(
+    r = client.chat.completions.create(
         model="gpt-4o",
         messages=[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":f"data:image/{mime};base64,{b64}"}},
             {"type":"text","text":"Transcribe TODO el texto de la imagen completa y ordenadamente. Solo el texto."}
-        ]}],
-        max_tokens=4000
-    )
-    return response.choices[0].message.content.strip(), 1
+        ]}], max_tokens=4000)
+    return r.choices[0].message.content.strip(), 1
 
 def extract_from_url(url, api_key):
     headers = {'User-Agent':'Mozilla/5.0 (compatible; MarisiReader/2.0)'}
@@ -231,10 +56,8 @@ def extract_from_url(url, api_key):
         r = requests.get(url, headers=headers, timeout=15)
         r.raise_for_status()
         soup = BeautifulSoup(r.text, 'html.parser')
-        for tag in soup(['script','style','nav','footer','header','aside']):
-            tag.decompose()
-        text = soup.get_text(separator='\n', strip=True)
-        lines = [l.strip() for l in text.split('\n') if len(l.strip()) > 30]
+        for tag in soup(['script','style','nav','footer','header','aside']): tag.decompose()
+        lines = [l.strip() for l in soup.get_text('\n',strip=True).split('\n') if len(l.strip())>30]
         return '\n'.join(lines)[:MAX_CHARS], 1
     except Exception as e:
         raise ValueError(f"No se pudo acceder a la URL: {str(e)}")
@@ -245,14 +68,14 @@ def extract_from_epub(filepath):
         from ebooklib import epub  # type: ignore[import]
     except ImportError:
         raise ValueError("EbookLib no está instalado.")
-    book_epub = epub.read_epub(filepath)
+    b = epub.read_epub(filepath)
     texts = []
-    for item in book_epub.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+    for item in b.get_items_of_type(ebooklib.ITEM_DOCUMENT):
         soup = BeautifulSoup(item.get_content(), 'html.parser')
-        t = soup.get_text(separator='\n', strip=True)
+        t = soup.get_text('\n', strip=True)
         if t: texts.append(t)
-    full_text = '\n'.join(texts)[:MAX_CHARS]
-    return full_text, max(1, len(full_text.split()) // 250)
+    full = '\n'.join(texts)[:MAX_CHARS]
+    return full, max(1, len(full.split())//250)
 
 def extract_from_docx(filepath):
     try:
@@ -260,116 +83,461 @@ def extract_from_docx(filepath):
     except ImportError:
         raise ValueError("python-docx no está instalado.")
     doc = Document(filepath)
-    paragraphs = [p.text.strip() for p in doc.paragraphs if p.text.strip()]
-    full_text = '\n'.join(paragraphs)[:MAX_CHARS]
-    return full_text, max(1, len(full_text.split()) // 250)
+    full = '\n'.join(p.text.strip() for p in doc.paragraphs if p.text.strip())[:MAX_CHARS]
+    return full, max(1, len(full.split())//250)
 
+# ─── LLAMADA A GPT ────────────────────────────────────────────────────────────
 
-def _quick_detect_title_author(text: str, api_key: str) -> tuple[str, str]:
-    """Detecta título y autor del texto antes de hacer el análisis completo."""
+def _gpt(client, prompt, max_tokens=2000, temperature=0.3, json_mode=True):
+    kwargs = dict(
+        model="gpt-4o-mini",
+        messages=[{"role":"user","content":prompt}],
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+    if json_mode:
+        kwargs["response_format"] = {"type": "json_object"}
+    r = client.chat.completions.create(**kwargs)
+    raw = r.choices[0].message.content.strip()
+    if json_mode:
+        raw = re.sub(r'^```(?:json)?\s*','',raw)
+        raw = re.sub(r'\s*```$','',raw)
+        return json.loads(raw)
+    return raw
+
+# ─── DETECCIÓN ───────────────────────────────────────────────────────────────
+
+def detect_content_type(text: str, api_key: str) -> str:
     client = OpenAI(api_key=api_key)
-    snippet = text[:2000]
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role":"user","content":f"""Del siguiente texto, extrae SOLO el título y autor.
-Responde SOLO con JSON: {{"title": "...", "author": "..."}}
-Si no puedes detectarlos con certeza, usa "---".
+    snippet = text[:2500]
+    r = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role":"user","content":f"""Clasifica en UNA categoría:
+legal / tech / data_science / philosophy / personal / article
 
 TEXTO:
-{snippet}"""}],
-            temperature=0, max_tokens=80
-        )
-        raw = res.choices[0].message.content.strip()
-        raw = raw.lstrip('```json').lstrip('```').rstrip('```').strip()
-        data = json.loads(raw)
-        return data.get('title','---'), data.get('author','---')
-    except Exception:
-        return '---', '---'
+{snippet}
 
+Responde SOLO con la clave."""}],
+        temperature=0, max_tokens=15)
+    detected = r.choices[0].message.content.strip().lower()
+    return detected if detected in CONTENT_TYPES else 'personal'
 
-def analyze_content(text, pages, content_type_key, api_key, profile_instructions='', enrichment_block=''):
-    client = OpenAI(api_key=api_key)
-    ctype = CONTENT_TYPES[content_type_key]
-    type_prompt = TYPE_ANALYSIS_PROMPTS.get(content_type_key, TYPE_ANALYSIS_PROMPTS['personal'])
+# ─── PASO 1: HECHOS ──────────────────────────────────────────────────────────
+
+def _step1_facts(text: str, content_type: str, client) -> dict:
+    """
+    Extrae los hechos objetivos del libro:
+    estructura, personajes, eventos, normas, conceptos técnicos.
+    Sin interpretación. Solo lo que hay.
+    """
+    type_instructions = {
+        'philosophy': """Extrae:
+- structure: lista de partes/capítulos con los argumentos reales de cada sección
+- key_figures: filósofos, obras y corrientes que aparecen y qué posición tienen
+- central_arguments: los argumentos principales en orden lógico
+- key_terms: términos técnicos con la definición EXACTA del autor (no Wikipedia)
+- what_gets_missed: detalles, matices o argumentos que los lectores suelen ignorar""",
+        'legal': """Extrae:
+- structure: capítulos/secciones con los temas jurídicos de cada uno
+- norms: TODAS las normas citadas (ley, decreto, artículo) con contenido exacto
+- cases: todos los fallos y sentencias con su ratio decidendi
+- key_concepts: conceptos jurídicos con definición doctrinal rigurosa y fuente
+- doctrinal_debates: posiciones doctrinales encontradas que menciona el texto
+- what_gets_missed: matices jurídicos, excepciones o casos límite que suelen pasarse por alto""",
+        'tech': """Extrae:
+- structure: capítulos con los temas técnicos de cada uno
+- concepts: conceptos técnicos con definición, ejemplo de código/uso y cuándo NO usar
+- tools: herramientas/librerías con casos de uso reales y limitaciones honestas
+- prerequisites: qué conocimiento previo asume el libro
+- what_gets_missed: errores comunes, edge cases o limitaciones que el libro menciona pero los lectores pasan por alto""",
+        'data_science': """Extrae:
+- structure: capítulos con los conceptos ML/estadística de cada uno
+- algorithms: algoritmos con intuición, caso de uso y cuándo fallan
+- tools: librerías/frameworks con trade-offs reales
+- math_concepts: conceptos matemáticos con intuición (sin fórmulas pesadas)
+- what_gets_missed: supuestos que los modelos hacen y que los lectores suelen ignorar""",
+        'personal': """Extrae:
+- structure: capítulos con las ideas principales de cada uno
+- core_claims: las afirmaciones centrales del autor (puede ser polémicas)
+- evidence: qué evidencia usa el autor para cada afirmación
+- exercises: ejercicios o acciones concretas que propone
+- what_gets_missed: matices, excepciones o advertencias que el autor incluye pero los lectores ignoran""",
+        'article': """Extrae:
+- thesis: la tesis exacta del artículo
+- arguments: los argumentos en orden con su evidencia
+- sources: fuentes citadas y cómo se usan
+- limitations: limitaciones que el propio autor reconoce
+- what_gets_missed: supuestos no explicitados""",
+    }
+
+    instructions = type_instructions.get(content_type, type_instructions['personal'])
+
+    prompt = f"""Eres un lector extremadamente preciso. Tu trabajo es extraer los HECHOS del siguiente texto.
+No interpretes. No evalúes. No conectes con el lector.
+Solo extrae lo que hay, con la mayor precisión y completitud posible.
+
+{instructions}
+
+Responde SOLO con JSON válido:
+{{
+  "title": "título exacto",
+  "author": "autor o '---'",
+  "year": "año o '---'",
+  "structure": [
+    {{"section": "nombre de la sección/capítulo", "content": "qué argumenta o desarrolla esta sección"}}
+  ],
+  "key_concepts": [
+    {{"term": "término", "definition": "definición exacta del autor, no Wikipedia", "source": "de dónde en el texto"}}
+  ],
+  "supporting_elements": [
+    {{"type": "norma|caso|herramienta|evidencia|ejercicio", "name": "nombre", "detail": "detalle relevante"}}
+  ],
+  "what_gets_missed": [
+    "detalle importante que los lectores suelen pasar por alto"
+  ]
+}}
+
+TEXTO DEL LIBRO:
+{text[:60000]}"""
+
+    try:
+        return _gpt(client, prompt, max_tokens=3000)
+    except Exception as e:
+        print(f"⚠ Paso 1 falló: {e}")
+        return {}
+
+# ─── PASO 2: TEMAS Y CONFLICTOS ──────────────────────────────────────────────
+
+def _step2_themes(text: str, content_type: str, facts: dict, client) -> dict:
+    """
+    Extrae los temas profundos: conflictos centrales, preguntas sin respuesta,
+    tensiones filosóficas, debates que genera.
+    """
+    facts_summary = json.dumps(facts, ensure_ascii=False)[:3000]
+
+    prompt = f"""A partir de los hechos extraídos de este libro, identifica los conflictos y tensiones profundas.
+
+HECHOS DEL LIBRO:
+{facts_summary}
+
+Analiza:
+
+1. CONFLICTO CENTRAL DEL LIBRO:
+   ¿Cuál es la tensión fundamental que el libro intenta resolver o explorar?
+   No el tema (ej: "la muerte") sino el conflicto (ej: "la sociedad juzga a las personas por
+   cómo expresan sus emociones, no por sus acciones reales").
+
+2. LA PREGUNTA QUE EL LIBRO REALMENTE HACE:
+   No la pregunta académica. La pregunta humana.
+   Ej: No "¿qué es el absurdo?" sino "¿cómo vivir cuando nada parece tener sentido?"
+
+3. LA IDEA QUE MÁS INCOMODA:
+   La afirmación del libro que más resistencia genera. Por qué.
+
+4. LO QUE EL LIBRO NO RESPONDE:
+   Las preguntas que deja abiertas deliberadamente.
+
+5. DEBATES QUE GENERA:
+   Las interpretaciones contrarias que existen sobre este libro.
+   Mínimo 3, específicas y con argumento real cada una.
+
+6. EL MOMENTO DE VIDA:
+   ¿En qué circunstancias de vida una persona suele llegar a este libro?
+   Sé específico. No "cuando buscan inspiración" sino algo concreto y humano.
+
+Responde SOLO con JSON válido:
+{{
+  "central_conflict": "el conflicto en una oración",
+  "human_question": "la pregunta humana real que hace el libro",
+  "most_uncomfortable_idea": "la idea que más incomoda y por qué",
+  "unanswered_questions": ["pregunta que el libro deja abierta"],
+  "debates": [
+    {{"interpretation": "nombre de la interpretación", "argument": "qué sostiene esta lectura", "who_holds_it": "qué tipo de lector o académico la sostiene"}}
+  ],
+  "life_moment": "la situación de vida concreta que lleva a alguien a este libro",
+  "branch": "área específica del conocimiento"
+}}"""
+
+    try:
+        return _gpt(client, prompt, max_tokens=1500)
+    except Exception as e:
+        print(f"⚠ Paso 2 falló: {e}")
+        return {}
+
+# ─── PASO 3: VOZ DE LA COMUNIDAD ─────────────────────────────────────────────
+
+def _step3_community(title: str, author: str, content_type: str, themes: dict, client) -> dict:
+    """
+    Sintetiza lo que la comunidad real dice sobre el libro:
+    Reddit, Goodreads, Quora, Stack Exchange, Medium.
+    Usa el conocimiento de GPT sobre estas comunidades.
+    """
+    if not title or title == '---':
+        return {}
+
+    book_ref = f'"{title}" de {author}' if author and author != '---' else f'"{title}"'
+    conflict = themes.get('central_conflict', '')
+    life_moment = themes.get('life_moment', '')
+
+    community_sources = {
+        'philosophy': 'r/philosophy, r/books, Goodreads, Stanford Encyclopedia of Philosophy discussions, Medium',
+        'legal': 'r/law, r/legaladvice, foros jurídicos académicos, Goodreads legal, reseñas de facultades de derecho',
+        'tech': 'r/programming, r/learnprogramming, Hacker News, Stack Overflow discussions, dev.to',
+        'data_science': 'r/MachineLearning, r/datascience, Kaggle discussions, Towards Data Science, fast.ai forums',
+        'personal': 'r/books, r/selfimprovement, r/productivity, Goodreads, Medium, Quora',
+        'article': 'Google Scholar discussions, ResearchGate, Academia.edu, Quora academic',
+    }
+    sources = community_sources.get(content_type, community_sources['personal'])
+
+    prompt = f"""Eres experto en lo que dicen las comunidades online sobre libros y textos académicos.
+
+LIBRO: {book_ref}
+CONFLICTO CENTRAL: {conflict}
+MOMENTO DE VIDA QUE LLEVA A ESTE LIBRO: {life_moment}
+FUENTES A CONSIDERAR: {sources}
+
+Basándote en tu conocimiento de estas comunidades, responde:
+
+1. ¿Qué escena, capítulo o idea es la que más cita y recuerda la gente?
+2. ¿Cuál es el malentendido más común sobre este libro?
+3. ¿Qué partes aman y qué partes critican en Goodreads/Reddit?
+4. ¿Qué frases o ideas del libro la gente cita en redes?
+5. ¿Qué tipo de persona le da 5 estrellas vs 1 estrella?
+6. ¿Qué preguntas hace la gente en Quora/Reddit sobre este libro?
+7. ¿Hay un debate específico en la comunidad que no sea obvio?
+
+Sé MUY ESPECÍFICO. No digas "muchos lectores". Di qué dicen exactamente.
+Si conoces citas, foros específicos, threads famosos, menciónalos.
+
+Responde SOLO con JSON válido:
+{{
+  "most_cited_moment": "la escena o idea que más cita la gente y por qué",
+  "most_common_misconception": "el malentendido más frecuente",
+  "loved_by_community": "qué aman específicamente",
+  "criticized_by_community": "qué critican específicamente",
+  "most_cited_phrases": ["frase o idea que la gente cita"],
+  "five_star_reader": "quién le da 5 estrellas y por qué",
+  "one_star_reader": "quién le da 1 estrella y por qué",
+  "community_debate": "el debate no obvio que existe en la comunidad",
+  "frequent_questions": ["pregunta que hace la gente sobre este libro"]
+}}"""
+
+    try:
+        return _gpt(client, prompt, max_tokens=1500)
+    except Exception as e:
+        print(f"⚠ Paso 3 falló: {e}")
+        return {}
+
+# ─── PASO 4: SÍNTESIS FINAL ──────────────────────────────────────────────────
+
+def _step4_synthesis(
+    text: str, content_type: str, pages: int,
+    facts: dict, themes: dict, community: dict,
+    profile_instructions: str, client
+) -> dict:
+    """
+    Sintetiza todo en el análisis final.
+    Conecta: conflicto del libro + voz de la comunidad + conflicto del lector.
+    """
+    ctype_label = CONTENT_TYPES[content_type]['label']
+
+    # Construir contexto comprimido de los pasos anteriores
+    facts_block = json.dumps({
+        'title': facts.get('title','---'),
+        'author': facts.get('author','---'),
+        'year': facts.get('year','---'),
+        'structure': facts.get('structure',[])[:6],
+        'what_gets_missed': facts.get('what_gets_missed',[]),
+    }, ensure_ascii=False)
+
+    themes_block = json.dumps(themes, ensure_ascii=False)
+    community_block = json.dumps(community, ensure_ascii=False) if community else '{}'
 
     reader_block = ''
     if profile_instructions:
         reader_block = f"""
 ╔══════════════════════════════════════════════════════════╗
-  PERFIL DEL LECTOR — Úsalo para personalizar TODO
+  QUIÉN ES EL LECTOR — Esto cambia TODO el análisis
 ╚══════════════════════════════════════════════════════════╝
 {profile_instructions}
-Escribe pensando en ESTA persona. Usa "tú" cuando sea natural.
-Conecta el libro con su vida, sus tensiones y sus objetivos.
+
+ALGORITMO CENTRAL:
+Conflicto del lector + Conflicto del libro = Interpretación que solo existe para esta persona.
+
+Identifica:
+1. ¿Cuál es el conflicto actual de este lector que resuena con el libro?
+2. ¿Qué va a encontrar que no esperaba?
+3. ¿Dónde va a estar de acuerdo y dónde va a chocar?
+4. ¿Qué parte del libro lo va a incomodar más?
+5. ¿Qué frase o idea del libro probablemente le quede dando vueltas?
 ═══════════════════════════════════════════════════════════
 """
 
-    prompt = f"""Eres un intérprete intelectual de élite. Tu trabajo NO es hacer resúmenes.
-Tu trabajo es mostrar qué hay realmente en un libro, por qué importa, y cómo ha transformado a personas reales.
+    # Construir instrucciones específicas por tipo para la síntesis
+    synthesis_instructions = {
+        'philosophy': """
+MODO ESTUDIO — key_concepts (mínimo 12):
+  Cada concepto: término exacto del autor, definición según el texto (no Wikipedia),
+  qué problema resuelve dentro del sistema del autor, cómo se conecta con otros conceptos.
+  Muestra la cadena: de qué premisa a qué conclusión.
 
-LA DIFERENCIA ENTRE RESUMIR E INTERPRETAR:
-✗ RESUMIR: "Camus sostiene que la vida es absurda y propone vivir con conciencia del absurdo."
-✓ INTERPRETAR: "Camus escribe para personas que ya saben que la vida puede no tener sentido
-  y aun así no pueden dejar de buscarle uno. El libro no responde esa pregunta — enseña a vivir sin responderla.
-  Y por eso lo han leído millones: no porque solucione el problema, sino porque lo nombra."
+MODO MENTOR — summary:
+  Estructura así (no como un párrafo plano):
+  - El conflicto central del libro en 1-2 oraciones directas
+  - Por qué llegó a ser importante para millones (específico, no genérico)
+  - Lo que la mayoría no nota (usa what_gets_missed y community si están disponibles)
+  - Si hay perfil del lector: qué va a encontrar esta persona específicamente
+
+exam_questions (10): Que obliguen a tomar posición propia, no a describir al autor.
+""",
+        'legal': """
+MODO ESTUDIO — key_concepts (mínimo 12):
+  Definición doctrinal rigurosa, fuente normativa o jurisprudencial,
+  aplicación práctica real, debates que genera en la doctrina.
+  Mostrar encadenamiento: de qué principio a qué consecuencia jurídica.
+
+supporting_elements → norms y jurisprudence: con identificación exacta y ratio decidendi real.
+
+MODO MENTOR — summary:
+  - El problema jurídico real que aborda (no el título)
+  - Por qué importa en la práctica (caso real o situación concreta)
+  - Lo que los estudiantes suelen pasar por alto (what_gets_missed)
+  - El debate doctrinal real que genera
+  - Si hay perfil del lector: conexión con su área específica
+
+exam_questions (10): Análisis de casos hipotéticos, no memorización de normas.
+""",
+        'tech': """
+MODO ESTUDIO — key_concepts (mínimo 10):
+  Qué es, para qué sirve, ejemplo de uso real, cuándo NO usar, alternativas.
+  Progresión de lo más básico a lo más avanzado.
+
+tools_frameworks: Con casos de uso reales, limitaciones honestas, cuándo preferir alternativas.
+
+MODO MENTOR — summary:
+  - Qué problema real resuelve este conocimiento
+  - Por qué importa aprenderlo ahora (contexto del mercado/industria)
+  - Lo que los tutoriales suelen omitir (what_gets_missed + community)
+  - Si hay perfil del lector: conexión con lo que está construyendo
+
+exam_questions (10): Problemas reales que un dev encontraría en producción.
+""",
+        'data_science': """
+MODO ESTUDIO — key_concepts (mínimo 10):
+  Definición técnica, intuición matemática accesible, caso de uso real, cuándo falla.
+  Progresión lógica de conceptos.
+
+tools_frameworks: Con trade-offs reales de la industria.
+
+MODO MENTOR — summary:
+  - Qué problema de datos/ML resuelve este libro
+  - Lo que los cursos de YouTube no enseñan (what_gets_missed)
+  - Lo que dice la comunidad (Kaggle, r/ML) sobre este libro
+  - Si hay perfil del lector: conexión con sus proyectos
+
+exam_questions (10): Decisiones de modelado reales con trade-offs.
+""",
+        'personal': """
+MODO ESTUDIO — key_concepts (mínimo 8):
+  La afirmación real del autor (puede ser polémica), la evidencia que usa,
+  cuándo funciona y cuándo no. Cadena de ideas del libro.
+
+action_items: Concretos y con contexto real de cuándo aplicarlos.
+
+MODO MENTOR — summary:
+  - La promesa real del libro (no la del título)
+  - La idea que más incomoda y por qué
+  - Lo que la gente ama y lo que critica (usa community)
+  - Si hay perfil del lector: qué va a resonar y qué va a chocar
+
+exam_questions (10): Preguntas que cuestionen creencias propias.
+""",
+        'article': """
+key_concepts (5-10): El argumento real con su lógica interna y su punto más débil.
+norms: Fuentes citadas y cómo las usa el autor (¿fielmente o selectivamente?).
+summary: El argumento real, la evidencia, los límites y los debates que genera.
+exam_questions (5): Análisis crítico de los argumentos, no descripción.
+""",
+    }
+
+    synth_inst = synthesis_instructions.get(content_type, synthesis_instructions['personal'])
+
+    prompt = f"""Eres un intérprete intelectual de élite. Tienes 4 fuentes de información:
+
+1. LOS HECHOS DEL LIBRO (extraídos en Paso 1):
+{facts_block}
+
+2. LOS CONFLICTOS Y TEMAS PROFUNDOS (extraídos en Paso 2):
+{themes_block}
+
+3. LO QUE DICE LA COMUNIDAD REAL (Reddit, Goodreads, Medium — Paso 3):
+{community_block}
 
 {reader_block}
 
-{enrichment_block}
+Tu trabajo: sintetizar todo en el análisis final.
 
-Tipo de contenido: {ctype['label']}
+LA DIFERENCIA QUE IMPORTA:
+✗ "Meursault es el hombre absurdo que vive sin ilusiones."
+✓ "Meursault no es juzgado por matar. Es juzgado por no llorar.
+   El tribunal usa el funeral como prueba moral. Eso es lo que escandaliza a la sociedad —
+   no el crimen, sino la negativa a fingir emociones que no siente.
+   Y esa es exactamente la pregunta que Camus quiere que te lleves: ¿nos juzgan por lo que hacemos
+   o por lo que los demás esperan que sintamos?"
 
-{type_prompt}
+Tipo de contenido: {ctype_label}
 
-Responde SOLO con JSON válido (sin markdown):
+{synth_inst}
+
+Responde SOLO con JSON válido:
 {{
-  "title": "Título exacto",
-  "author": "Autor(es) o '---'",
-  "year": "Año o '---'",
-  "branch": "Área específica y precisa",
-  "content_type": "{content_type_key}",
-  "summary": "Interpretación profunda y personalizada — NO resumen",
+  "title": "{facts.get('title','---')}",
+  "author": "{facts.get('author','---')}",
+  "year": "{facts.get('year','---')}",
+  "branch": "área específica y precisa",
+  "content_type": "{content_type}",
+
+  "summary": "Interpretación profunda — NO resumen. Ver instrucciones de MODO MENTOR arriba.",
+
   "why_this_book_matters": [
-    {{"profile": "tipo de lector por momento de vida", "insight": "qué encuentra ahí que no esperaba"}}
+    {{"profile": "momento de vida específico", "insight": "qué encuentra ahí que no esperaba — específico y humano"}}
   ],
+
+  "what_community_says": {{
+    "most_cited_moment": "...",
+    "common_misconception": "...",
+    "community_debate": "..."
+  }},
+
   "concept_map": [
-    {{"from": "concepto A", "to": "concepto B", "relation": "cómo se conectan"}}
+    {{"from": "concepto A", "to": "concepto B", "relation": "cómo se conectan en el argumento del autor"}}
   ],
+
   "debate_suggestion": {{
-    "natural_opponent": "nombre del pensador/autor/enfoque contrario",
-    "natural_ally": "nombre del pensador/autor/enfoque afín",
+    "natural_opponent": "pensador/autor/enfoque que contradice directamente",
+    "natural_ally": "pensador/autor/enfoque que resuena",
     "central_tension": "la tensión en una oración",
     "why": "por qué ese debate específico es revelador",
-    "reader_position": "dónde se ubicaría probablemente este lector"
+    "reader_position": "dónde se ubicaría probablemente este lector (solo si hay perfil)"
   }},
-  "key_concepts": [{{"term":"...","definition":"...","context":"..."}}],
-  "norms": [{{"norm":"...","content":"...","relevance":"..."}}],
-  "jurisprudence": [{{"case":"...","court":"...","contribution":"..."}}],
-  "tools_frameworks": [{{"name":"...","purpose":"...","when_to_use":"..."}}],
-  "action_items": [{{"action":"...","context":"...","benefit":"..."}}],
-  "exam_questions": [{{"question":"...","hint":"..."}}],
-  "chapter_map": [{{"chapter":"...","topics":["..."]}}]
-}}
 
-CONTENIDO DEL LIBRO:
-{text}
+  "key_concepts": [
+    {{"term": "...", "definition": "definición del autor, no Wikipedia", "context": "cómo se conecta con otros conceptos"}}
+  ],
+
+  "norms": [{{"norm": "...", "content": "...", "relevance": "..."}}],
+  "jurisprudence": [{{"case": "...", "court": "...", "contribution": "..."}}],
+  "tools_frameworks": [{{"name": "...", "purpose": "...", "when_to_use": "..."}}],
+  "action_items": [{{"action": "...", "context": "...", "benefit": "..."}}],
+  "exam_questions": [{{"question": "...", "hint": "..."}}],
+  "chapter_map": [{{"chapter": "...", "topics": ["..."]}}]
+}}
 """
 
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role":"user","content":prompt}],
-        temperature=0.4,
-        max_tokens=5000
-    )
-    raw = response.choices[0].message.content.strip()
-    raw = re.sub(r'^```(?:json)?\s*','',raw)
-    raw = re.sub(r'\s*```$','',raw)
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Error en respuesta JSON: {str(e)}")
+    result = _gpt(client, prompt, max_tokens=5000, temperature=0.4)
 
+    # Garantizar campos presentes
     result['pages'] = pages
     for f in ['key_concepts','norms','jurisprudence','tools_frameworks','action_items',
               'exam_questions','chapter_map','why_this_book_matters','concept_map']:
@@ -377,11 +545,16 @@ CONTENIDO DEL LIBRO:
             result[f] = []
     if 'debate_suggestion' not in result:
         result['debate_suggestion'] = {}
+    if 'what_community_says' not in result:
+        result['what_community_says'] = {}
+
     return result
 
 
+# ─── PROCESO COMPLETO ─────────────────────────────────────────────────────────
+
 def process_source(source_type, filepath_or_url, api_key, profile_instructions=''):
-    # 1. Extraer texto
+    # Extraer texto
     if source_type == 'pdf':
         text, pages = extract_from_pdf(filepath_or_url)
     elif source_type == 'image':
@@ -398,24 +571,39 @@ def process_source(source_type, filepath_or_url, api_key, profile_instructions='
     if len(text.strip()) < 80:
         raise ValueError("No se pudo extraer suficiente texto del contenido.")
 
-    # 2. Detectar tipo de contenido
-    content_type_key = detect_content_type(text, api_key)
+    client = OpenAI(api_key=api_key)
 
-    # 3. Detectar título y autor para buscar en la web
-    title, author = _quick_detect_title_author(text, api_key)
+    print("📖 Paso 1: Extrayendo hechos...")
+    content_type = detect_content_type(text, api_key)
+    facts = _step1_facts(text, content_type, client)
 
-    # 4. Enriquecer con búsqueda web en 4 capas
-    enrichment_block = ''
-    if title != '---':
-        try:
-            from enrichment import enrich_book_context, build_enrichment_block
-            enrichment = enrich_book_context(title, author, content_type_key, api_key)
-            enrichment_block = build_enrichment_block(enrichment, title, author)
-        except Exception as e:
-            print(f"⚠ Enrichment falló (no crítico): {e}")
-            enrichment_block = ''
+    print("🧠 Paso 2: Analizando conflictos y temas...")
+    themes = _step2_themes(text, content_type, facts, client)
 
-    # 5. Analizar con IA usando texto + enriquecimiento + perfil del lector
-    result = analyze_content(text, pages, content_type_key, api_key, profile_instructions, enrichment_block)
+    print("👥 Paso 3: Consultando voz de la comunidad...")
+    title = facts.get('title', '---')
+    author = facts.get('author', '---')
+    community = _step3_community(title, author, content_type, themes, client)
+
+    print("✨ Paso 4: Sintetizando con perfil del lector...")
+    result = _step4_synthesis(
+        text, content_type, pages,
+        facts, themes, community,
+        profile_instructions, client
+    )
+
     result['source_type'] = source_type
+    print(f"✅ Análisis completo: {result.get('title','---')}")
     return result
+
+
+# ─── FUNCIÓN LEGACY para compatibilidad ──────────────────────────────────────
+def analyze_content(text, pages, content_type_key, api_key, profile_instructions=''):
+    """Mantiene compatibilidad con llamadas directas."""
+    client = OpenAI(api_key=api_key)
+    facts = _step1_facts(text, content_type_key, client)
+    themes = _step2_themes(text, content_type_key, facts, client)
+    community = _step3_community(
+        facts.get('title',''), facts.get('author',''), content_type_key, themes, client
+    )
+    return _step4_synthesis(text, content_type_key, pages, facts, themes, community, profile_instructions, client)
