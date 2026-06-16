@@ -6,6 +6,7 @@ from auth import register_auth_routes, login_required, get_current_user
 from onboarding import register_onboarding_routes, get_user_profile_instructions
 from academic import register_academic_routes, get_academic_context
 from ingestion import process_source
+from job_queue import enqueue_job, get_job, get_user_jobs, init_jobs_table
 from connections import get_connections_for_book, semantic_search, build_connections
 from flashcards import register_flashcard_routes
 from readermind import register_reader_mind_routes
@@ -25,6 +26,7 @@ register_flashcard_routes(app)
 register_reader_mind_routes(app)
 
 init_db(app)
+init_jobs_table(get_db(app))
 
 ALLOWED_EXTENSIONS = {'pdf','png','jpg','jpeg','webp','heic','epub','docx'}
 
@@ -143,15 +145,11 @@ def upload_content():
 
     filepath = None
     source_url = None
+    filename = None
 
     if source_type == 'url':
         source_url = request.form.get('url','').strip()
         if not source_url: return jsonify({'error':'Ingresa una URL válida'}), 400
-        try:
-            result = process_source('url', source_url, api_key, profile_instructions)
-        except Exception as e:
-            app.logger.exception('Error processing URL')
-            return jsonify({'error': f'Error al procesar la URL: {str(e)}'}), 500
     else:
         if 'file' not in request.files: return jsonify({'error':'No se envió archivo'}), 400
         file = request.files['file']
@@ -161,57 +159,59 @@ def upload_content():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
         ext = filename.rsplit('.',1)[-1].lower()
-        if ext == 'pdf':
-            detected_type = 'pdf'
-        elif ext in ('epub', 'docx'):
-            detected_type = ext
-        else:
-            detected_type = 'image'
-        try:
-            result = process_source(detected_type, filepath, api_key, profile_instructions)
-        except Exception as e:
-            app.logger.exception('Error processing file')
-            return jsonify({'error': f'Error al analizar: {str(e)}'}), 500
+        if ext == 'pdf': source_type = 'pdf'
+        elif ext in ('epub','docx'): source_type = ext
+        else: source_type = 'image'
 
-    cur = db.execute('''
-        INSERT INTO books (user_id,title,author,year,branch,content_type,pages,source_type,source_url,
-            filename,summary,key_concepts,norms,jurisprudence,exam_questions,chapter_map,
-            tools_frameworks,action_items,debate_suggestion,why_this_book_matters,concept_map,what_community_says)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-        (user_id, result['title'], result.get('author',''), result.get('year','---'),
-         result.get('branch','General'), result.get('content_type','personal'),
-         result.get('pages',0), source_type, source_url,
-         os.path.basename(filepath) if filepath else None,
-         result.get('summary',''),
-         json.dumps(result.get('key_concepts',[])),
-         json.dumps(result.get('norms',[])),
-         json.dumps(result.get('jurisprudence',[])),
-         json.dumps(result.get('exam_questions',[])),
-         json.dumps(result.get('chapter_map',[])),
-         json.dumps(result.get('tools_frameworks',[])),
-         json.dumps(result.get('action_items',[])),
-         json.dumps(result.get('debate_suggestion',{})),
-         json.dumps(result.get('why_this_book_matters',[])),
-         json.dumps(result.get('concept_map',[])),
-         json.dumps(result.get('what_community_says',{}))))
-    db.commit()
+    job_id = enqueue_job(
+        user_id=user_id,
+        api_key=api_key,
+        source_type=source_type,
+        profile_instructions=profile_instructions,
+        academic_context=academic_context,
+        filepath=filepath,
+        source_url=source_url,
+        filename=filename
+    )
+    return jsonify({'ok': True, 'job_id': job_id, 'status': 'pending'})
 
-    new_book_id = cur.lastrowid
+# ── JOBS / POLLING ───────────────────────────────────
+@app.route('/api/jobs/<int:job_id>', methods=['GET'])
+@login_required
+def get_job_status(job_id):
+    user_id = session['user_id']
+    job = get_job(job_id)
+    if not job: return jsonify({'error':'Job no encontrado'}), 404
+    if job['user_id'] != user_id: return jsonify({'error':'No autorizado'}), 403
+    return jsonify({
+        'job_id': job_id,
+        'status': job['status'],
+        'step': job.get('step',''),
+        'progress': job.get('progress', 0),
+        'progress_msg': job.get('progress_msg',''),
+        'book_id': job.get('book_id'),
+        'error_msg': job.get('error_msg') if job['status'] == 'error' else None,
+        'filename': job.get('filename',''),
+        'updated_at': job.get('updated_at','')
+    })
 
-    def _bg_connections(user_id, book_id, api_key):
-        import sqlite3, os as _os
-        db2 = sqlite3.connect(_os.environ.get('DB_PATH', 'marisi_reader.db'))
-        db2.row_factory = sqlite3.Row
-        try:
-            build_connections(db2, user_id, book_id, api_key)
-        except Exception as e:
-            print(f"⚠ Error en background connections: {e}")
-        finally:
-            db2.close()
+@app.route('/api/jobs', methods=['GET'])
+@login_required
+def list_jobs():
+    user_id = session['user_id']
+    return jsonify(get_user_jobs(user_id, limit=20))
 
-    threading.Thread(target=_bg_connections, args=(user_id, new_book_id, api_key), daemon=True).start()
-
-    return jsonify({'ok':True,'book_id':new_book_id,'title':result['title'],'content_type':result.get('content_type')})
+@app.route('/api/jobs/<int:job_id>/cancel', methods=['DELETE'])
+@login_required
+def cancel_job(job_id):
+    user_id = session['user_id']
+    job = get_job(job_id)
+    if not job: return jsonify({'error':'Job no encontrado'}), 404
+    if job['user_id'] != user_id: return jsonify({'error':'No autorizado'}), 403
+    if job['status'] not in ('pending','error'): return jsonify({'error':'Solo se pueden cancelar jobs en pending o error'}), 400
+    from job_queue import _update_job
+    _update_job(job_id, status='cancelled', progress_msg='Cancelado por el usuario')
+    return jsonify({'ok': True})
 
 # ── CHAT ────────────────────────────────────────────
 @app.route('/api/books/<int:book_id>/chat', methods=['GET'])
