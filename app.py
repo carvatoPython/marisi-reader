@@ -69,20 +69,20 @@ def get_book(book_id):
     book = db.execute('SELECT * FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
     if not book: return jsonify({'error':'Libro no encontrado'}), 404
     data = dict(book)
-    for f in ['key_concepts','norms','jurisprudence','exam_questions','chapter_map','tools_frameworks','action_items','why_this_book_matters','concept_map']:
+    for f in ['key_concepts','norms','jurisprudence','exam_questions','chapter_map','tools_frameworks',
+              'action_items','why_this_book_matters','concept_map','transformative_ideas',
+              'character_profiles','debatable_ideas','impact_by_profile','real_questions']:
         if data.get(f):
             try: data[f] = json.loads(data[f])
             except: data[f] = []
         else: data[f] = []
-    if data.get('debate_suggestion'):
-        try: data['debate_suggestion'] = json.loads(data['debate_suggestion'])
-        except: data['debate_suggestion'] = {}
-    else:
-        data['debate_suggestion'] = {}
-    if data.get('what_community_says'):
-        try: data['what_community_says'] = json.loads(data['what_community_says'])
-        except: data['what_community_says'] = {}
-    else:
+    for f in ['debate_suggestion','what_community_says','importance_hierarchy']:
+        if data.get(f):
+            try: data[f] = json.loads(data[f])
+            except: data[f] = {}
+        else: data[f] = {}
+    if not data.get('author_thesis'):
+        data['author_thesis'] = ''
         data['what_community_says'] = {}
     return jsonify(data)
 

@@ -194,8 +194,10 @@ def _run_job(job_id: int, api_key: str, profile_instructions: str,
                     key_concepts, norms, jurisprudence, exam_questions,
                     chapter_map, tools_frameworks, action_items,
                     debate_suggestion, why_this_book_matters,
-                    concept_map, what_community_says)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    concept_map, what_community_says,
+                    author_thesis, transformative_ideas, importance_hierarchy,
+                    character_profiles, debatable_ideas, impact_by_profile, real_questions)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     user_id,
                     result.get("title", "Sin título"),
@@ -219,6 +221,13 @@ def _run_job(job_id: int, api_key: str, profile_instructions: str,
                     json.dumps(result.get("why_this_book_matters", [])),
                     json.dumps(result.get("concept_map", [])),
                     json.dumps(result.get("what_community_says", {})),
+                    result.get("author_thesis", ""),
+                    json.dumps(result.get("transformative_ideas", [])),
+                    json.dumps(result.get("importance_hierarchy", {})),
+                    json.dumps(result.get("character_profiles", [])),
+                    json.dumps(result.get("debatable_ideas", [])),
+                    json.dumps(result.get("impact_by_profile", [])),
+                    json.dumps(result.get("real_questions", [])),
                 )
             )
             conn.commit()

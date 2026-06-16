@@ -179,6 +179,24 @@ Solo extrae lo que hay, con la mayor precisión y completitud posible.
 
 {instructions}
 
+EXTRAE TAMBIÉN (para todos los tipos de contenido):
+
+JERARQUÍA DE IMPORTANCIA — clasifica los conceptos/ideas en 3 niveles:
+  Nivel A: lo fundamental — si solo recuerdas 3 cosas, son estas
+  Nivel B: importante pero secundario
+  Nivel C: detalle o contexto
+
+EVOLUCIÓN / PROGRESIÓN — ¿hay una transformación, argumento que avanza, o narrativa que cambia?
+  Si es ficción/filosofía: cómo evoluciona el protagonista o el argumento
+  Si es jurídico: cómo progresa la doctrina o el razonamiento
+  Si es técnico: cómo progresa la complejidad del conocimiento
+
+PREGUNTAS QUE EL LIBRO INTENTA RESPONDER — no el tema, sino las preguntas reales:
+  Ej: No "trata sobre la muerte" sino "¿puede alguien ser juzgado por quién es y no por lo que hizo?"
+
+EVIDENCIA TEXTUAL — para los conceptos más importantes, extrae fragmentos textuales exactos
+  con indicación de dónde aparecen (capítulo, sección o contexto aproximado)
+
 Responde SOLO con JSON válido:
 {{
   "title": "título exacto",
@@ -189,6 +207,20 @@ Responde SOLO con JSON válido:
   ],
   "key_concepts": [
     {{"term": "término", "definition": "definición exacta del autor, no Wikipedia", "source": "de dónde en el texto"}}
+  ],
+  "importance_hierarchy": {{
+    "level_a": ["idea o concepto fundamental — las 3 cosas que no puedes olvidar"],
+    "level_b": ["idea importante pero secundaria"],
+    "level_c": ["detalle o contexto complementario"]
+  }},
+  "evolution": [
+    {{"stage": "inicio|desarrollo|punto de quiebre|resolución", "description": "qué ocurre o cómo cambia el argumento/personaje en esta etapa"}}
+  ],
+  "real_questions": [
+    "pregunta concreta y humana que el libro intenta responder (no el tema, la pregunta)"
+  ],
+  "textual_evidence": [
+    {{"concept": "a qué concepto pertenece", "fragment": "fragmento textual exacto del libro", "location": "capítulo/sección/contexto aproximado"}}
   ],
   "supporting_elements": [
     {{"type": "norma|caso|herramienta|evidencia|ejercicio", "name": "nombre", "detail": "detalle relevante"}}
@@ -202,7 +234,7 @@ TEXTO DEL LIBRO:
 {text[:60000]}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=3000)
+        return _gpt(client, prompt, max_tokens=4000)
     except Exception as e:
         print(f"⚠ Paso 1 falló: {e}")
         return {}
@@ -500,6 +532,40 @@ Responde SOLO con JSON válido:
 
   "summary": "Interpretación profunda — NO resumen. Ver instrucciones de MODO MENTOR arriba.",
 
+  "author_thesis": "La tesis exacta que el autor intenta demostrar — en 2-3 oraciones directas. No el tema: la afirmación.",
+
+  "transformative_ideas": [
+    {{"idea": "idea concreta que puede cambiar la forma de ver el mundo", "why": "por qué esta idea específicamente transforma al lector"}}
+  ],
+
+  "importance_hierarchy": {{
+    "level_a": ["si solo recuerdas 3 cosas de este libro, son estas"],
+    "level_b": ["importante pero secundario"],
+    "level_c": ["detalle o contexto complementario"]
+  }},
+
+  "character_profiles": [
+    {{
+      "name": "nombre del personaje/autor/figura central",
+      "motivations": "qué lo mueve realmente",
+      "fear": "qué evita o teme",
+      "evolution": "cómo cambia a lo largo del libro — inicio → final",
+      "key_insight": "la idea más importante que representa este personaje"
+    }}
+  ],
+
+  "debatable_ideas": [
+    {{"idea": "afirmación polémica o discutible del libro", "pro": "argumento a favor", "contra": "argumento en contra"}}
+  ],
+
+  "impact_by_profile": [
+    {{"profile": "abogado|estudiante de derecho|filósofo|psicólogo|etc", "specific_impact": "qué encuentra específicamente valioso este perfil y por qué"}}
+  ],
+
+  "real_questions": [
+    "pregunta humana concreta que el libro intenta responder"
+  ],
+
   "why_this_book_matters": [
     {{"profile": "momento de vida específico", "insight": "qué encuentra ahí que no esperaba — específico y humano"}}
   ],
@@ -511,7 +577,7 @@ Responde SOLO con JSON válido:
   }},
 
   "concept_map": [
-    {{"from": "concepto A", "to": "concepto B", "relation": "cómo se conectan en el argumento del autor"}}
+    {{"from": "concepto A", "to": "concepto B", "relation": "cómo se conectan causalmente en el argumento del autor"}}
   ],
 
   "debate_suggestion": {{
@@ -523,7 +589,7 @@ Responde SOLO con JSON válido:
   }},
 
   "key_concepts": [
-    {{"term": "...", "definition": "definición del autor, no Wikipedia", "context": "cómo se conecta con otros conceptos"}}
+    {{"term": "...", "definition": "definición del autor, no Wikipedia", "context": "cómo se conecta con otros conceptos del libro"}}
   ],
 
   "norms": [{{"norm": "...", "content": "...", "relevance": "..."}}],
@@ -535,18 +601,21 @@ Responde SOLO con JSON válido:
 }}
 """
 
-    result = _gpt(client, prompt, max_tokens=5000, temperature=0.4)
+    result = _gpt(client, prompt, max_tokens=6000, temperature=0.4)
 
     # Garantizar campos presentes
     result['pages'] = pages
     for f in ['key_concepts','norms','jurisprudence','tools_frameworks','action_items',
-              'exam_questions','chapter_map','why_this_book_matters','concept_map']:
+              'exam_questions','chapter_map','why_this_book_matters','concept_map',
+              'transformative_ideas','character_profiles','debatable_ideas',
+              'impact_by_profile','real_questions']:
         if f not in result:
             result[f] = []
-    if 'debate_suggestion' not in result:
-        result['debate_suggestion'] = {}
-    if 'what_community_says' not in result:
-        result['what_community_says'] = {}
+    for f in ['debate_suggestion','what_community_says','importance_hierarchy']:
+        if f not in result:
+            result[f] = {}
+    if 'author_thesis' not in result:
+        result['author_thesis'] = ''
 
     return result
 
