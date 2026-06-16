@@ -968,8 +968,18 @@ function openAdd() {
   STATE.srcType = 'pdf';
   document.getElementById('file-selected-info').classList.add('hidden');
   document.getElementById('add-progress').classList.add('hidden');
+  document.getElementById('btn-do-add').classList.remove('hidden');
+  const bg = document.getElementById('btn-bg-close');
+  if (bg) bg.classList.add('hidden');
   document.getElementById('url-input').value = '';
   openModal('modal-add');
+}
+
+// Notificación cuando el job termina con el modal cerrado
+function _onJobDoneBackground(bookId) {
+  loadBooks();
+  toast('📚 Análisis completo — libro listo en tu biblioteca', 'success');
+  setTimeout(() => openBook(bookId), 600);
 }
 
 function setSrcTab(type, btn) {
@@ -990,46 +1000,111 @@ function handleFileSelect(input, type) {
   info.textContent = `📄 ${file.name} (${(file.size/1024/1024).toFixed(1)} MB)`;
 }
 
+/* ── UPLOAD + POLLING ─────────────────────────────────────────────────────── */
+
+let _pollInterval = null;
+
+function _stopPolling() {
+  if (_pollInterval) { clearInterval(_pollInterval); _pollInterval = null; }
+}
+
 async function doAdd() {
   const prog = document.getElementById('add-progress');
   const fill = document.getElementById('add-progress-fill');
   const text = document.getElementById('add-progress-text');
-  prog.classList.remove('hidden');
 
-  const steps = ['Extrayendo contenido…','Detectando tipo de libro…','Analizando con IA…','Generando preguntas…','Guardando en catálogo…'];
-  let step = 0;
-  const iv = setInterval(()=>{fill.style.width=Math.min(90,(step+1)/steps.length*100)+'%';text.textContent=steps[Math.min(step,steps.length-1)];step++;},2200);
-
+  // Construir FormData
   const formData = new FormData();
   if (STATE.srcType === 'url') {
     const url = document.getElementById('url-input').value.trim();
-    if (!url) { clearInterval(iv); prog.classList.add('hidden'); return toast('Ingresa una URL válida','error'); }
-    formData.append('source_type','url');
+    if (!url) return toast('Ingresa una URL válida', 'error');
+    formData.append('source_type', 'url');
     formData.append('url', url);
   } else {
-    if (!STATE.selectedFile) { clearInterval(iv); prog.classList.add('hidden'); return toast('Selecciona un archivo','error'); }
+    if (!STATE.selectedFile) return toast('Selecciona un archivo', 'error');
     formData.append('source_type', STATE.srcType);
     formData.append('file', STATE.selectedFile);
   }
 
+  // Mostrar barra de progreso inicial
+  prog.classList.remove('hidden');
+  fill.style.width = '5%';
+  text.textContent = 'Subiendo archivo…';
+  document.getElementById('btn-do-add').classList.add('hidden');
+
+  let data;
   try {
-    const res = await fetch('/api/upload', { method:'POST', body:formData });
-    const data = await res.json();
-    clearInterval(iv);
-    if (data.error) { prog.classList.add('hidden'); return toast(data.error,'error'); }
-    fill.style.width='100%';
-    text.textContent='✓ ¡Guardado exitosamente!';
-    setTimeout(()=>{
-      closeModal('modal-add');
-      loadBooks();
-      toast(`"${data.title}" agregado ✓`,'success');
-      setTimeout(()=>openBook(data.book_id),400);
-    },900);
-  } catch(e) {
-    clearInterval(iv);
+    const res = await fetch('/api/upload', { method: 'POST', body: formData });
+    data = await res.json();
+  } catch (e) {
     prog.classList.add('hidden');
-    toast('Error de conexión','error');
+    return toast('Error de conexión', 'error');
   }
+
+  if (data.error) {
+    prog.classList.add('hidden');
+    return toast(data.error, 'error');
+  }
+
+  // El backend devuelve job_id — iniciar polling
+  const jobId = data.job_id;
+  fill.style.width = '8%';
+  text.textContent = 'Análisis iniciado — procesando en segundo plano…';
+
+  _stopPolling();
+  // Mostrar opción de cerrar y esperar en background
+  const bgBtn = document.getElementById('btn-bg-close');
+  if (bgBtn) bgBtn.classList.remove('hidden');
+  _pollInterval = setInterval(() => _pollJob(jobId, fill, text), 3000);
+}
+
+async function _pollJob(jobId, fill, text) {
+  let job;
+  try {
+    const res = await fetch(`/api/jobs/${jobId}`);
+    job = await res.json();
+  } catch (e) {
+    return; // red inestable — reintentar en el próximo ciclo
+  }
+
+  if (job.error) {
+    _stopPolling();
+    document.getElementById('add-progress').classList.add('hidden');
+    return toast('Error al obtener estado del análisis', 'error');
+  }
+
+  const modalOpen = !document.getElementById('modal-add').classList.contains('hidden');
+
+  if (modalOpen) {
+    const pct = Math.max(8, job.progress || 0);
+    fill.style.width = pct + '%';
+    text.textContent = job.progress_msg || 'Procesando…';
+  }
+
+  if (job.status === 'done') {
+    _stopPolling();
+    if (modalOpen) {
+      fill.style.width = '100%';
+      text.textContent = '✅ ¡Análisis completo!';
+      setTimeout(() => {
+        closeModal('modal-add');
+        loadBooks();
+        toast('Libro agregado ✓', 'success');
+        if (job.book_id) setTimeout(() => openBook(job.book_id), 400);
+      }, 1000);
+    } else {
+      // Modal cerrado — notificar silenciosamente
+      if (job.book_id) _onJobDoneBackground(job.book_id);
+    }
+
+  } else if (job.status === 'error') {
+    _stopPolling();
+    if (modalOpen) {
+      document.getElementById('add-progress').classList.add('hidden');
+    }
+    toast('Error en el análisis: ' + (job.error_msg || 'intenta de nuevo'), 'error');
+  }
+  // pending | running → seguir polling
 }
 
 /* ── ACADEMIC ─────────────────────── */

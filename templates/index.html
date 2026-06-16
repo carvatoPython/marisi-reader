@@ -225,6 +225,9 @@
       <div id="add-progress" class="upload-progress hidden">
         <div class="progress-bar"><div id="add-progress-fill" class="progress-fill"></div></div>
         <p id="add-progress-text">Analizando con IA…</p>
+        <button id="btn-bg-close" class="btn-ghost-sm hidden" onclick="closeModal('modal-add')" style="margin-top:.75rem;width:100%;font-size:.8rem">
+          Cerrar y esperar en segundo plano →
+        </button>
       </div>
       <button id="btn-do-add" class="btn-primary" onclick="doAdd()">Analizar y guardar →</button>
     </div>
