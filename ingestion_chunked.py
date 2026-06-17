@@ -52,9 +52,10 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
         for i, page in enumerate(pdf.pages):
             page_num = i + 1
             print(f"📄 Extrayendo página {page_num}/{total_pages}")
+            text = page.extract_text() or ""
             print(f"Caracteres: {len(text)}")
 
-            text = page.extract_text() or ""
+            
             buffer += text + "\n"
 
             del text
