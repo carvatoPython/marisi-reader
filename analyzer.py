@@ -2,7 +2,7 @@ import os, json, re
 from openai import OpenAI
 import pdfplumber
 
-MAX_CHARS = 120000
+MAX_CHARS = 80000
 
 def extract_text_from_pdf(filepath):
     text = ""; page_count = 0
@@ -55,7 +55,7 @@ TEXTO DEL LIBRO:
     response = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role":"user","content":prompt}],
-        temperature=0.2, max_tokens=8000)
+        temperature=0.2, max_tokens=4000)
     raw = response.choices[0].message.content.strip()
     raw = re.sub(r'^```(?:json)?\s*','',raw); raw = re.sub(r'\s*```$','',raw)
     try:

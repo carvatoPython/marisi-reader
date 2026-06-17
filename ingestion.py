@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 import pdfplumber
 
-MAX_CHARS = 120000
+MAX_CHARS = 80000
 
 CONTENT_TYPES = {
     'legal':        {'label': 'Jurídico / Derecho'},
@@ -47,7 +47,7 @@ def extract_from_image(filepath, api_key):
         messages=[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":f"data:image/{mime};base64,{b64}"}},
             {"type":"text","text":"Transcribe TODO el texto de la imagen completa y ordenadamente. Solo el texto."}
-        ]}], max_tokens=8000)
+        ]}], max_tokens=4000)
     return r.choices[0].message.content.strip(), 1
 
 def extract_from_url(url, api_key):
@@ -88,7 +88,7 @@ def extract_from_docx(filepath):
 
 # ─── LLAMADA A GPT ────────────────────────────────────────────────────────────
 
-def _gpt(client, prompt, max_tokens=4000, temperature=0.3, json_mode=True):
+def _gpt(client, prompt, max_tokens=2000, temperature=0.3, json_mode=True):
     kwargs = dict(
         model="gpt-4o-mini",
         messages=[{"role":"user","content":prompt}],
@@ -231,10 +231,10 @@ Responde SOLO con JSON válido:
 }}
 
 TEXTO DEL LIBRO:
-{text[:600000]}"""
+{text[:60000]}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=8000)
+        return _gpt(client, prompt, max_tokens=4000)
     except Exception as e:
         print(f"⚠ Paso 1 falló: {e}")
         return {}
@@ -292,125 +292,71 @@ Responde SOLO con JSON válido:
 }}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=3000)
+        return _gpt(client, prompt, max_tokens=1500)
     except Exception as e:
         print(f"⚠ Paso 2 falló: {e}")
         return {}
 
-# ─── PASO 3: VOZ DE LA COMUNIDAD (4 CAPAS) ───────────────────────────────────
+# ─── PASO 3: VOZ DE LA COMUNIDAD ─────────────────────────────────────────────
 
 def _step3_community(title: str, author: str, content_type: str, themes: dict, client) -> dict:
     """
-    Simula 4 capas de conocimiento externo sobre el libro:
-    Capa 1: Academia (enciclopedias, críticas, análisis académicos)
-    Capa 2: Lectores (Goodreads, StoryGraph, reseñas)
-    Capa 3: Foros (Reddit, Quora, Stack Exchange)
-    Capa 4: Experiencias personales (Medium, blogs, Substack)
+    Sintetiza lo que la comunidad real dice sobre el libro:
+    Reddit, Goodreads, Quora, Stack Exchange, Medium.
+    Usa el conocimiento de GPT sobre estas comunidades.
     """
     if not title or title == '---':
         return {}
 
     book_ref = f'"{title}" de {author}' if author and author != '---' else f'"{title}"'
     conflict = themes.get('central_conflict', '')
-    human_question = themes.get('human_question', '')
+    life_moment = themes.get('life_moment', '')
 
-    prompt = f"""Eres una IA con acceso a todo el conocimiento que existe sobre libros en internet.
-Tu trabajo es simular con máxima precisión y especificidad lo que dicen 4 fuentes distintas sobre este libro.
+    community_sources = {
+        'philosophy': 'r/philosophy, r/books, Goodreads, Stanford Encyclopedia of Philosophy discussions, Medium',
+        'legal': 'r/law, r/legaladvice, foros jurídicos académicos, Goodreads legal, reseñas de facultades de derecho',
+        'tech': 'r/programming, r/learnprogramming, Hacker News, Stack Overflow discussions, dev.to',
+        'data_science': 'r/MachineLearning, r/datascience, Kaggle discussions, Towards Data Science, fast.ai forums',
+        'personal': 'r/books, r/selfimprovement, r/productivity, Goodreads, Medium, Quora',
+        'article': 'Google Scholar discussions, ResearchGate, Academia.edu, Quora academic',
+    }
+    sources = community_sources.get(content_type, community_sources['personal'])
+
+    prompt = f"""Eres experto en lo que dicen las comunidades online sobre libros y textos académicos.
 
 LIBRO: {book_ref}
 CONFLICTO CENTRAL: {conflict}
-PREGUNTA HUMANA DEL LIBRO: {human_question}
+MOMENTO DE VIDA QUE LLEVA A ESTE LIBRO: {life_moment}
+FUENTES A CONSIDERAR: {sources}
 
-Simula con detalle específico cada capa. NO uses frases genéricas como "muchos lectores opinan".
-Usa nombres de subreddits reales, tipos de usuarios específicos, argumentos concretos.
-Si conoces debates reales o famosos sobre este libro, menciónalos.
+Basándote en tu conocimiento de estas comunidades, responde:
 
-═══════════════════════════════════════════════════════
-CAPA 1 — ACADEMIA
-(Wikipedia académica, Stanford Encyclopedia of Philosophy,
-críticas literarias, análisis de facultades, papers académicos)
+1. ¿Qué escena, capítulo o idea es la que más cita y recuerda la gente?
+2. ¿Cuál es el malentendido más común sobre este libro?
+3. ¿Qué partes aman y qué partes critican en Goodreads/Reddit?
+4. ¿Qué frases o ideas del libro la gente cita en redes?
+5. ¿Qué tipo de persona le da 5 estrellas vs 1 estrella?
+6. ¿Qué preguntas hace la gente en Quora/Reddit sobre este libro?
+7. ¿Hay un debate específico en la comunidad que no sea obvio?
 
-Responde:
-- ¿Cómo clasifica la academia este libro? ¿Qué corriente, período o movimiento?
-- ¿Cuál es la interpretación académica dominante?
-- ¿Qué interpretación alternativa existe en la academia?
-- ¿Qué aspectos del libro han generado más papers o tesis?
-- ¿Hay algún debate académico específico y conocido sobre esta obra?
-
-═══════════════════════════════════════════════════════
-CAPA 2 — LECTORES REALES
-(Goodreads, StoryGraph, LibraryThing, reseñas de Amazon)
-
-Responde:
-- ¿Qué rating promedio tiene y qué lo explica?
-- ¿Qué dicen los lectores de 5 estrellas específicamente?
-- ¿Qué dicen los lectores de 1-2 estrellas específicamente?
-- ¿Qué escena, frase o momento es el más citado en reseñas?
-- ¿Qué expectativa traía el lector promedio y qué encontró en realidad?
-- ¿Hay una frase o cita del libro que aparece en miles de reseñas?
-
-═══════════════════════════════════════════════════════
-CAPA 3 — FOROS Y DEBATES
-(Reddit r/books r/law r/philosophy r/learnprogramming, Quora, Stack Exchange)
-
-Responde:
-- ¿Cuál es el thread o debate más recurrente sobre este libro en Reddit?
-- ¿Qué pregunta hace la gente en Quora sobre este libro?
-- ¿Hay alguna interpretación "controversial" que divide a los lectores?
-- ¿Qué defienden los fans más acérrimos?
-- ¿Qué critican los detractores con más fuerza?
-
-═══════════════════════════════════════════════════════
-CAPA 4 — EXPERIENCIAS PERSONALES
-(Medium, Substack, blogs personales, comentarios de YouTube)
-
-Responde:
-- ¿Qué tipo de experiencia personal comparte la gente al hablar de este libro?
-- ¿En qué momento de vida suele llegar la gente a este libro?
-- ¿Qué cambio concreto dice la gente que produjo en su forma de pensar?
-- ¿Hay alguna historia de "este libro cambió mi vida" recurrente?
-- ¿Qué idea del libro aparece más en ensayos personales?
+Sé MUY ESPECÍFICO. No digas "muchos lectores". Di qué dicen exactamente.
+Si conoces citas, foros específicos, threads famosos, menciónalos.
 
 Responde SOLO con JSON válido:
 {{
-  "academic_layer": {{
-    "classification": "cómo clasifica la academia este libro",
-    "dominant_interpretation": "interpretación académica dominante",
-    "alternative_interpretation": "interpretación académica alternativa",
-    "most_studied_aspects": ["aspecto que más genera papers o análisis académicos"],
-    "known_academic_debate": "debate académico específico y conocido si existe"
-  }},
-  "readers_layer": {{
-    "avg_rating_context": "rating aproximado y qué lo explica",
-    "five_star_says": "qué dicen específicamente los fans",
-    "one_star_says": "qué dicen específicamente los detractores",
-    "most_cited_moment": "escena, frase o momento más citado en reseñas",
-    "expectation_vs_reality": "qué esperaba el lector promedio vs qué encontró",
-    "viral_quote": "frase del libro que aparece en miles de reseñas si existe"
-  }},
-  "forums_layer": {{
-    "recurring_reddit_debate": "debate más recurrente en Reddit sobre este libro",
-    "common_quora_question": "pregunta más frecuente en Quora",
-    "controversial_interpretation": "interpretación que más divide a los lectores",
-    "defenders_argue": "qué defienden los fans más acérrimos",
-    "critics_argue": "qué critican los detractores con más fuerza"
-  }},
-  "personal_layer": {{
-    "life_moment": "en qué momento de vida llega la gente a este libro",
-    "reported_change": "qué cambio concreto dice la gente que produjo en su forma de pensar",
-    "recurring_personal_story": "historia de impacto personal recurrente si existe",
-    "most_cited_idea_in_essays": "idea del libro que más aparece en ensayos personales"
-  }},
-  "synthesis": {{
-    "most_cited_moment": "el momento más memorable para la comunidad en general",
-    "common_misconception": "el malentendido más frecuente sobre este libro",
-    "community_debate": "el debate más importante que genera en la comunidad",
-    "what_nobody_tells_you": "lo que nadie te dice sobre este libro antes de leerlo"
-  }}
+  "most_cited_moment": "la escena o idea que más cita la gente y por qué",
+  "most_common_misconception": "el malentendido más frecuente",
+  "loved_by_community": "qué aman específicamente",
+  "criticized_by_community": "qué critican específicamente",
+  "most_cited_phrases": ["frase o idea que la gente cita"],
+  "five_star_reader": "quién le da 5 estrellas y por qué",
+  "one_star_reader": "quién le da 1 estrella y por qué",
+  "community_debate": "el debate no obvio que existe en la comunidad",
+  "frequent_questions": ["pregunta que hace la gente sobre este libro"]
 }}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=5000)
+        return _gpt(client, prompt, max_tokens=1500)
     except Exception as e:
         print(f"⚠ Paso 3 falló: {e}")
         return {}
@@ -438,26 +384,7 @@ def _step4_synthesis(
     }, ensure_ascii=False)
 
     themes_block = json.dumps(themes, ensure_ascii=False)
-    
-    # Inyectar las 4 capas de comunidad con estructura clara
-    if community:
-        community_block = f"""
-CAPA 1 — ACADEMIA:
-{json.dumps(community.get('academic_layer', {}), ensure_ascii=False)}
-
-CAPA 2 — LECTORES REALES (Goodreads/StoryGraph):
-{json.dumps(community.get('readers_layer', {}), ensure_ascii=False)}
-
-CAPA 3 — FOROS (Reddit/Quora):
-{json.dumps(community.get('forums_layer', {}), ensure_ascii=False)}
-
-CAPA 4 — EXPERIENCIAS PERSONALES (Medium/blogs):
-{json.dumps(community.get('personal_layer', {}), ensure_ascii=False)}
-
-SÍNTESIS COMUNITARIA:
-{json.dumps(community.get('synthesis', {}), ensure_ascii=False)}"""
-    else:
-        community_block = '{}'
+    community_block = json.dumps(community, ensure_ascii=False) if community else '{}'
 
     reader_block = ''
     if profile_instructions:
@@ -674,7 +601,7 @@ Responde SOLO con JSON válido:
 }}
 """
 
-    result = _gpt(client, prompt, max_tokens=12000, temperature=0.4)
+    result = _gpt(client, prompt, max_tokens=6000, temperature=0.4)
 
     # Garantizar campos presentes
     result['pages'] = pages
@@ -687,23 +614,6 @@ Responde SOLO con JSON válido:
     for f in ['debate_suggestion','what_community_says','importance_hierarchy']:
         if f not in result:
             result[f] = {}
-
-    # Si community tiene estructura de 4 capas, enriquecer what_community_says
-    if community and 'synthesis' in community:
-        s = community['synthesis']
-        if not result.get('what_community_says') or not result['what_community_says'].get('most_cited_moment'):
-            result['what_community_says'] = {
-                'most_cited_moment': s.get('most_cited_moment', ''),
-                'common_misconception': s.get('common_misconception', ''),
-                'community_debate': s.get('community_debate', ''),
-                'what_nobody_tells_you': s.get('what_nobody_tells_you', '')
-            }
-        result['community_layers'] = {
-            'academic': community.get('academic_layer', {}),
-            'readers': community.get('readers_layer', {}),
-            'forums': community.get('forums_layer', {}),
-            'personal': community.get('personal_layer', {})
-        }
     if 'author_thesis' not in result:
         result['author_thesis'] = ''
 
