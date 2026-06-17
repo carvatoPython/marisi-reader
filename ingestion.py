@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 import pdfplumber
 
-MAX_CHARS = 80000
+MAX_CHARS = 580000
 
 CONTENT_TYPES = {
     'legal':        {'label': 'Jurídico / Derecho'},
@@ -47,7 +47,7 @@ def extract_from_image(filepath, api_key):
         messages=[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":f"data:image/{mime};base64,{b64}"}},
             {"type":"text","text":"Transcribe TODO el texto de la imagen completa y ordenadamente. Solo el texto."}
-        ]}], max_tokens=4000)
+        ]}], max_tokens=40000)
     return r.choices[0].message.content.strip(), 1
 
 def extract_from_url(url, api_key):

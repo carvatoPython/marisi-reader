@@ -19,10 +19,10 @@ from openai import OpenAI
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PAGES_PER_CHUNK = 15       # páginas por fragmento
-CHARS_PER_CHUNK = 18_000   # ~15 páginas densas en caracteres
-MAX_WORKERS = 3            # llamadas GPT paralelas máximo
-CHUNK_MAX_TOKENS = 2500    # tokens por análisis de chunk
-SYNTHESIS_MAX_TOKENS = 6000  # tokens para síntesis final
+CHARS_PER_CHUNK = 60_000   # ~15 páginas densas en caracteres
+MAX_WORKERS = 8            # llamadas GPT paralelas máximo
+CHUNK_MAX_TOKENS = 5000    # tokens por análisis de chunk
+SYNTHESIS_MAX_TOKENS = 12000  # tokens para síntesis final
 
 
 # ── EXTRACCIÓN POR CHUNKS ─────────────────────────────────────────────────────
