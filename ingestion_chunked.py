@@ -34,6 +34,13 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
     """
 
     import os
+    import psutil
+    import gc
+
+
+    process = psutil.Process(os.getpid())
+
+    print(f"RAM: {process.memory_info().rss / 1024 / 1024:.1f} MB")
     size_mb = os.path.getsize(filepath) / (1024 * 1024)
     print(f"📚 PDF: {size_mb:.2f} MB")
 
@@ -54,6 +61,10 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
             text = page.extract_text() or ""
             buffer += text + "\n"
 
+            del text
+            gc.collect()
+
+    
             is_last = page_num == total_pages
             is_full = (
                 len(buffer) >= CHARS_PER_CHUNK
