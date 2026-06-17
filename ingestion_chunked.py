@@ -22,7 +22,7 @@ PAGES_PER_CHUNK = 15       # páginas por fragmento
 CHARS_PER_CHUNK = 18_000   # ~15 páginas densas en caracteres
 MAX_WORKERS = 3            # llamadas GPT paralelas máximo
 CHUNK_MAX_TOKENS = 2500    # tokens por análisis de chunk
-SYNTHESIS_MAX_TOKENS = 6000  # tokens para síntesis final
+SYNTHESIS_MAX_TOKENS = 8000  # tokens para síntesis final (guía ejecutiva, no JSON exhaustivo)
 
 
 # ── EXTRACCIÓN POR CHUNKS ─────────────────────────────────────────────────────
@@ -282,16 +282,22 @@ def _synthesize_full(
     }
     ctype_label = CONTENT_TYPE_LABELS.get(content_type, 'Académico')
 
-    # Comprimir knowledge base para el prompt — priorizar diversidad sobre cantidad
-
+    # Comprimir knowledge base para el prompt — la KB completa ya vive en
+    # knowledge_base / se persistirá en book_knowledge en la Fase 2 jerárquica.
+    # Aquí solo seleccionamos una muestra representativa y manejable para
+    # que el modelo pueda generar una guía ejecutiva de calidad, no un
+    # volcado imposible de 300+ ítems en un solo JSON.
     kb_for_prompt = {
-        "chapter_topics": knowledge_base["chapter_topics"][:100],
-        "key_concepts": knowledge_base["key_concepts"][:200],
-        "norms": knowledge_base["norms"][:150],
-        "cases": knowledge_base["cases"][:100],
-        "doctrinal_notes": knowledge_base["doctrinal_notes"][:100],
-        "important_quotes": knowledge_base["important_quotes"][:50],
-        "chunks_processed": knowledge_base["chunks_processed"]
+        "chapter_topics": knowledge_base["chapter_topics"][:60],
+        "key_concepts": knowledge_base["key_concepts"][:40],
+        "norms": knowledge_base["norms"][:40],
+        "cases": knowledge_base["cases"][:30],
+        "doctrinal_notes": knowledge_base["doctrinal_notes"][:30],
+        "important_quotes": knowledge_base["important_quotes"][:20],
+        "chunks_processed": knowledge_base["chunks_processed"],
+        "total_concepts_in_kb": len(knowledge_base["key_concepts"]),
+        "total_norms_in_kb": len(knowledge_base["norms"]),
+        "total_cases_in_kb": len(knowledge_base["cases"]),
     }
 
     kb_json = json.dumps(kb_for_prompt, ensure_ascii=False)
@@ -313,18 +319,20 @@ Conecta el contenido del libro con sus necesidades específicas:
 
     synthesis_instructions = {
         'legal': """
-MODO ESTUDIO — key_concepts (mínimo 15, idealmente 20+):
-  Usa TODOS los conceptos extraídos del knowledge base.
-  Para cada uno: definición doctrinal rigurosa, fuente normativa,
-  aplicación práctica, debates que genera.
+MODO GUÍA EJECUTIVA — key_concepts (selecciona los 15-20 MÁS IMPORTANTES para estudiar):
+  No es necesario incluir todos los conceptos del knowledge base — esa base completa
+  ya queda almacenada y disponible para consulta. Tu tarea aquí es priorizar:
+  los conceptos que más probablemente aparezcan en examen o sean fundamento de otros.
+  Para cada uno: definición doctrinal rigurosa, fuente normativa, aplicación práctica.
 
-norms: USA TODAS las normas del knowledge base — no omitas ninguna.
-  Para cada una: identificación exacta, qué establece, contexto.
+norms: Selecciona las 15-20 normas más relevantes y centrales del libro.
+  Prioriza las que se citan repetidamente o sustentan los argumentos principales.
 
-jurisprudence: USA TODOS los casos del knowledge base.
+jurisprudence: Selecciona los 10-15 casos más importantes o más citados.
   Para cada uno: tribunal, año, ratio decidendi, importancia.
 
-chapter_map: Construye el mapa completo de capítulos/secciones del libro.
+chapter_map: Construye el mapa de capítulos/secciones principales del libro
+  (puedes resumir varios chapter_topics afines en una sola entrada de capítulo).
 
 MODO MENTOR — summary:
   - El problema jurídico real que aborda el libro completo
@@ -332,36 +340,50 @@ MODO MENTOR — summary:
   - Lo que los estudiantes suelen pasar por alto
   - El debate doctrinal más importante que genera
 
-exam_questions (15): Análisis de casos hipotéticos, problemas jurídicos reales,
+exam_questions (10): Análisis de casos hipotéticos, problemas jurídicos reales,
   no memorización. Basadas en el contenido REAL del libro completo.
+
+CRÍTICO: Esta es una guía ejecutiva de estudio, no un volcado exhaustivo.
+Selecciona con criterio lo más importante — la base de conocimiento completa
+del libro ya está preservada por separado y sigue disponible para consultas
+puntuales (por ejemplo en el chat). Calidad y relevancia, no cantidad.
 """,
         'tech': """
-MODO ESTUDIO — key_concepts (mínimo 15):
-  Usa todos los conceptos del knowledge base con ejemplos reales.
+MODO GUÍA EJECUTIVA — key_concepts (selecciona los 15 más importantes):
+  Prioriza los conceptos fundamentales sobre los que se construyen los demás.
+  Con ejemplos reales de uso.
 
-tools_frameworks: Usa todas las herramientas identificadas con trade-offs.
+tools_frameworks: Selecciona las herramientas más relevantes con trade-offs reales.
 
-chapter_map: Mapa completo del libro.
+chapter_map: Mapa de las secciones principales del libro.
 
-exam_questions (12): Problemas reales de producción, no teoría.
+exam_questions (10): Problemas reales de producción, no teoría.
+
+CRÍTICO: Guía ejecutiva, no volcado exhaustivo. La base de conocimiento completa
+sigue disponible por separado.
 """,
         'personal': """
-MODO ESTUDIO — key_concepts (mínimo 10):
-  Usa todas las afirmaciones y conceptos del knowledge base.
+MODO GUÍA EJECUTIVA — key_concepts (selecciona los 10 más importantes):
+  Prioriza las afirmaciones centrales que sostienen el argumento del libro.
 
-action_items: Usa todos los ejercicios identificados con contexto de aplicación.
+action_items: Selecciona los ejercicios más prácticos y aplicables con contexto.
 
-chapter_map: Mapa completo.
+chapter_map: Mapa de las secciones principales.
 
 exam_questions (10): Preguntas de aplicación práctica.
+
+CRÍTICO: Guía ejecutiva, no volcado exhaustivo.
 """,
     }
     synth_inst = synthesis_instructions.get(content_type, synthesis_instructions.get('personal', ''))
 
-    prompt = f"""Eres un intérprete intelectual de élite. Tienes el knowledge base COMPLETO de un libro de {pages} páginas,
-extraído en {knowledge_base['chunks_processed']} fragmentos analizados secuencialmente.
+    prompt = f"""Eres un intérprete intelectual de élite. Tienes una MUESTRA REPRESENTATIVA
+del knowledge base de un libro de {pages} páginas, extraído en {knowledge_base['chunks_processed']}
+fragmentos analizados secuencialmente (el libro tiene en total {kb_for_prompt['total_concepts_in_kb']}
+conceptos, {kb_for_prompt['total_norms_in_kb']} normas y {kb_for_prompt['total_cases_in_kb']} casos
+identificados — aquí ves los más representativos).
 
-KNOWLEDGE BASE COMPLETO DEL LIBRO:
+MUESTRA DEL KNOWLEDGE BASE:
 {kb_json}
 
 TÍTULO APROXIMADO: {title_hint}
@@ -369,8 +391,11 @@ TIPO: {ctype_label}
 
 {reader_block}
 
-Tu trabajo: sintetizar TODO este conocimiento en el análisis final.
-CRÍTICO: No omitas normas, casos ni conceptos del knowledge base. Este es el valor principal.
+Tu trabajo: generar una GUÍA EJECUTIVA DE ESTUDIO de alta calidad a partir de esta muestra.
+Selecciona con criterio lo más importante y relevante. La base de conocimiento completa del
+libro ya fue preservada y sigue disponible aparte (para consultas puntuales en el chat) —
+tu tarea NO es reproducirla entera aquí, sino sintetizar lo esencial en una guía clara,
+profunda y útil para estudiar.
 
 {synth_inst}
 
@@ -442,12 +467,8 @@ Responde SOLO con JSON válido:
         response_format={"type": "json_object"}
     )
 
-    print(r.usage)
-    print("Completion tokens:", r.usage.completion_tokens)
-    print("Prompt tokens:", r.usage.prompt_tokens)
+    print(f"📊 Síntesis: {r.usage.prompt_tokens} tokens prompt, {r.usage.completion_tokens} tokens completion")
     raw = r.choices[0].message.content.strip()
-    print("LONGITUD RESPUESTA:", len(raw))
-    print(raw[-1000:])
     result = json.loads(raw)
 
     # Garantizar campos
