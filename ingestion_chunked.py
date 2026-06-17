@@ -16,6 +16,7 @@ Arquitectura de procesamiento en background:
 import json, re, time
 import pdfplumber
 from openai import OpenAI
+import os
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PAGES_PER_CHUNK = 15       # páginas por fragmento
@@ -28,6 +29,11 @@ SYNTHESIS_MAX_TOKENS = 6000  # tokens para síntesis final
 # ── EXTRACCIÓN POR CHUNKS ─────────────────────────────────────────────────────
 
 def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
+    import os
+
+    size_mb = os.path.getsize(filepath) / (1024 * 1024)
+    print(f"📚 PDF: {size_mb:.2f} MB")
+    
     """
     Extrae el PDF completo dividiéndolo en chunks de ~15 páginas.
     Retorna lista de chunks y total de páginas.
@@ -37,17 +43,24 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
 
     with pdfplumber.open(filepath) as pdf:
         total_pages = len(pdf.pages)
+        print(f"📖 Total páginas: {total_pages}")
         buffer = ""
         chunk_start = 1
 
         for i, page in enumerate(pdf.pages):
             page_num = i + 1
+
+            # 👇 AGREGAR ESTO
+            print(f"📄 Extrayendo página {page_num}/{total_pages}")
+
             text = page.extract_text() or ""
             buffer += text + "\n"
 
-            # Cerrar chunk cuando alcanza el límite de caracteres o páginas
             is_last = page_num == total_pages
-            is_full = len(buffer) >= CHARS_PER_CHUNK or (page_num - chunk_start + 1) >= PAGES_PER_CHUNK
+            is_full = (
+                len(buffer) >= CHARS_PER_CHUNK
+                or (page_num - chunk_start + 1) >= PAGES_PER_CHUNK
+            )
 
             if is_full or is_last:
                 if buffer.strip():
@@ -58,6 +71,7 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
                         "page_end": page_num,
                         "text": buffer[:CHARS_PER_CHUNK]
                     })
+
                 buffer = ""
                 chunk_start = page_num + 1
 
@@ -263,7 +277,7 @@ def _synthesize_full(
     ctype_label = CONTENT_TYPE_LABELS.get(content_type, 'Académico')
 
     # Comprimir knowledge base para el prompt — priorizar diversidad sobre cantidad
-    
+
     kb_for_prompt = {
         "chapter_topics": knowledge_base["chapter_topics"][:100],
         "key_concepts": knowledge_base["key_concepts"][:200],
