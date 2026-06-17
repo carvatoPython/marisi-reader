@@ -263,15 +263,17 @@ def _synthesize_full(
     ctype_label = CONTENT_TYPE_LABELS.get(content_type, 'Académico')
 
     # Comprimir knowledge base para el prompt — priorizar diversidad sobre cantidad
+    
     kb_for_prompt = {
-        "chapter_topics": knowledge_base["chapter_topics"][:40],
-        "key_concepts": knowledge_base["key_concepts"][:50],
-        "norms": knowledge_base["norms"][:60],
-        "cases": knowledge_base["cases"][:40],
-        "doctrinal_notes": knowledge_base["doctrinal_notes"][:20],
-        "important_quotes": knowledge_base["important_quotes"][:15],
+        "chapter_topics": knowledge_base["chapter_topics"][:100],
+        "key_concepts": knowledge_base["key_concepts"][:200],
+        "norms": knowledge_base["norms"][:150],
+        "cases": knowledge_base["cases"][:100],
+        "doctrinal_notes": knowledge_base["doctrinal_notes"][:100],
+        "important_quotes": knowledge_base["important_quotes"][:50],
         "chunks_processed": knowledge_base["chunks_processed"]
     }
+
     kb_json = json.dumps(kb_for_prompt, ensure_ascii=False)
 
     reader_block = ""
