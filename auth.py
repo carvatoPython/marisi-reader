@@ -35,6 +35,7 @@ def register_auth_routes(app):
         display_name = body.get('display_name','').strip()
         password = body.get('password','')
         api_key = body.get('api_key','').strip()
+        email = body.get('email','').strip().lower()
 
         if not username or not password or not display_name:
             return jsonify({'error': 'Faltan datos'}), 400
@@ -51,8 +52,8 @@ def register_auth_routes(app):
         is_admin = 1 if count == 0 else 0
         pw_hash = hash_password(password)
         cur = db.execute(
-            'INSERT INTO users (username, display_name, password_hash, is_admin, api_key_enc) VALUES (?,?,?,?,?)',
-            (username, display_name, pw_hash, is_admin, api_key)
+            'INSERT INTO users (username, display_name, password_hash, is_admin, api_key_enc, email) VALUES (?,?,?,?,?,?)',
+            (username, display_name, pw_hash, is_admin, api_key, email)
         )
         db.execute('INSERT INTO user_profiles (user_id) VALUES (?)', (cur.lastrowid,))
         db.commit()

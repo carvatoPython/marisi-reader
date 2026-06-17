@@ -30,6 +30,7 @@ def init_db(app):
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 api_key_enc TEXT DEFAULT '',
+                email TEXT DEFAULT '',
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS user_profiles (
@@ -108,7 +109,34 @@ def init_db(app):
                 FOREIGN KEY (book_a_id) REFERENCES books(id),
                 FOREIGN KEY (book_b_id) REFERENCES books(id)
             );
-            CREATE TABLE IF NOT EXISTS flashcard_sets (
+            CREATE TABLE IF NOT EXISTS book_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                chunk_index INTEGER NOT NULL,
+                page_start INTEGER NOT NULL,
+                page_end INTEGER NOT NULL,
+                pages_label TEXT NOT NULL,
+                raw_text TEXT NOT NULL,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(book_id, chunk_index),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
+            CREATE TABLE IF NOT EXISTS chunk_analysis (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                chunk_id INTEGER NOT NULL UNIQUE,
+                book_id INTEGER NOT NULL,
+                key_concepts TEXT DEFAULT '[]',
+                norms TEXT DEFAULT '[]',
+                cases TEXT DEFAULT '[]',
+                chapter_topics TEXT DEFAULT '[]',
+                exam_signals TEXT DEFAULT '[]',
+                doctrinal_notes TEXT DEFAULT '[]',
+                supporting_elements TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (chunk_id) REFERENCES book_chunks(id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 book_id INTEGER NOT NULL,
                 user_id INTEGER NOT NULL,
@@ -167,6 +195,9 @@ def init_db(app):
 
 def _migrate(db):
     migrations = {
+        'users': {
+        'email': "ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''",
+        },
         'user_profiles': {
             'depth': "ALTER TABLE user_profiles ADD COLUMN depth TEXT DEFAULT 'standard'",
             'goal': "ALTER TABLE user_profiles ADD COLUMN goal TEXT DEFAULT 'understand'",
@@ -183,18 +214,17 @@ def _migrate(db):
             'why_this_book_matters': "ALTER TABLE books ADD COLUMN why_this_book_matters TEXT DEFAULT '[]'",
             'concept_map': "ALTER TABLE books ADD COLUMN concept_map TEXT DEFAULT '[]'",
             'what_community_says': "ALTER TABLE books ADD COLUMN what_community_says TEXT DEFAULT '{}'",
-            'author_thesis': "ALTER TABLE books ADD COLUMN author_thesis TEXT DEFAULT ''",
-            'transformative_ideas': "ALTER TABLE books ADD COLUMN transformative_ideas TEXT DEFAULT '[]'",
-            'importance_hierarchy': "ALTER TABLE books ADD COLUMN importance_hierarchy TEXT DEFAULT '{}'",
-            'character_profiles': "ALTER TABLE books ADD COLUMN character_profiles TEXT DEFAULT '[]'",
-            'debatable_ideas': "ALTER TABLE books ADD COLUMN debatable_ideas TEXT DEFAULT '[]'",
-            'impact_by_profile': "ALTER TABLE books ADD COLUMN impact_by_profile TEXT DEFAULT '[]'",
-            'real_questions': "ALTER TABLE books ADD COLUMN real_questions TEXT DEFAULT '[]'",
         },
         'chat_messages': {
             'user_id': "ALTER TABLE chat_messages ADD COLUMN user_id INTEGER",
         },
-        'reader_mind': {
+        'book_chunks': {
+            'raw_text': "ALTER TABLE book_chunks ADD COLUMN raw_text TEXT NOT NULL DEFAULT ''",
+        },
+        'chunk_analysis': {
+            'exam_signals': "ALTER TABLE chunk_analysis ADD COLUMN exam_signals TEXT DEFAULT '[]'",
+            'doctrinal_notes': "ALTER TABLE chunk_analysis ADD COLUMN doctrinal_notes TEXT DEFAULT '[]'",
+        },
             'thinking_style': "ALTER TABLE reader_mind ADD COLUMN thinking_style TEXT DEFAULT ''",
             'emotional_profile': "ALTER TABLE reader_mind ADD COLUMN emotional_profile TEXT DEFAULT ''",
             'critical_tendency': "ALTER TABLE reader_mind ADD COLUMN critical_tendency TEXT DEFAULT ''",
@@ -204,7 +234,6 @@ def _migrate(db):
             'main_bias': "ALTER TABLE reader_mind ADD COLUMN main_bias TEXT DEFAULT ''",
             'profile_summary': "ALTER TABLE reader_mind ADD COLUMN profile_summary TEXT DEFAULT ''",
         },
-    }
     for table, cols in migrations.items():
         existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
         for col_name, ddl in cols.items():

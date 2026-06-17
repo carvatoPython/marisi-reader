@@ -13,6 +13,11 @@ Estados de un job:
 
 import sqlite3, json, threading, os, time, traceback
 from datetime import datetime
+import sys
+sys.path.append(r"C:\Users\CARVATO\Documents\VScode  archivos\mery")
+from mery.comms import gmail_enviar
+
+
 
 DATABASE = os.environ.get("DB_PATH", "marisi_reader.db")
 
@@ -232,6 +237,40 @@ def _run_job(job_id: int, api_key: str, profile_instructions: str,
             )
             conn.commit()
             book_id = cur.lastrowid
+
+            # ── Guardar chunks y su análisis para modo lectura ────────────
+            chunks_data = result.get("_chunks", [])
+            if chunks_data:
+                for ch in chunks_data:
+                    chunk_cur = conn.execute(
+                        """INSERT OR IGNORE INTO book_chunks
+                           (book_id, user_id, chunk_index, page_start, page_end, pages_label, raw_text)
+                           VALUES (?,?,?,?,?,?,?)""",
+                        (book_id, user_id,
+                         ch.get("chunk_index", 0),
+                         ch.get("page_start", 0),
+                         ch.get("page_end", 0),
+                         ch.get("pages", ""),
+                         ch.get("raw_text", "")[:20000])
+                    )
+                    chunk_id = chunk_cur.lastrowid
+                    if chunk_id:
+                        conn.execute(
+                            """INSERT OR IGNORE INTO chunk_analysis
+                               (chunk_id, book_id, key_concepts, norms, cases,
+                                chapter_topics, exam_signals, doctrinal_notes, supporting_elements)
+                               VALUES (?,?,?,?,?,?,?,?,?)""",
+                            (chunk_id, book_id,
+                             json.dumps(ch.get("key_concepts", [])),
+                             json.dumps(ch.get("norms", [])),
+                             json.dumps(ch.get("cases", [])),
+                             json.dumps(ch.get("chapter_topics", [])),
+                             json.dumps(ch.get("exam_signals", [])),
+                             json.dumps(ch.get("doctrinal_notes", [])),
+                             json.dumps(ch.get("supporting_elements", [])))
+                        )
+                conn.commit()
+                print(f"✅ {len(chunks_data)} chunks guardados para modo lectura")
         finally:
             conn.close()
 
@@ -255,6 +294,27 @@ def _run_job(job_id: int, api_key: str, profile_instructions: str,
         ).start()
 
         # ── Job completado ────────────────────────────────────────────────
+                # ── Notificación por email ────────────────────────────────────────
+        try:
+            conn2 = _get_conn()
+            user = conn2.execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
+            conn2.close()
+            if user and user['email']:
+                gmail_enviar(
+                    destinatario=user['email'],
+                    asunto=f"📚 Tu libro está listo: {result.get('title', '---')}",
+                    cuerpo=f"""Tu análisis ha terminado.
+
+                    📖 {result.get('title', '---')}
+
+                    Resumen:
+                    {result.get('summary', '')[:800]}
+
+                    Ya puedes entrar a Marisi Reader y estudiar el contenido completo."""
+                )
+        except Exception as e:
+
+            print(f"⚠ Email no enviado: {e}")
         _update_job(
             job_id,
             status="done",

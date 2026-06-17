@@ -16,6 +16,7 @@ Arquitectura de procesamiento en background:
 import json, re, time
 import pdfplumber
 from openai import OpenAI
+from mery.comms import gmail_enviar
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PAGES_PER_CHUNK = 15       # páginas por fragmento
@@ -755,6 +756,26 @@ def process_pdf_chunked(
         client=client
     )
     _progress("synthesize", 1, 1, f"✅ Análisis completo: {result.get('title', '---')}")
+
+    
+
+    # Adjuntar chunks con análisis para que job_queue los persista
+    result["_chunks"] = []
+    for i, (chunk, analysis) in enumerate(zip(chunks, chunk_results)):
+        result["_chunks"].append({
+            "chunk_index": i,
+            "page_start": chunk["page_start"],
+            "page_end": chunk["page_end"],
+            "pages": chunk["pages"],
+            "raw_text": chunk["text"],
+            "key_concepts": analysis.get("key_concepts", []),
+            "norms": analysis.get("norms", []),
+            "cases": analysis.get("cases", []),
+            "chapter_topics": analysis.get("chapter_topics", []),
+            "exam_signals": analysis.get("exam_signals", []),
+            "doctrinal_notes": analysis.get("doctrinal_notes", []),
+            "supporting_elements": analysis.get("supporting_elements", []),
+        })
 
     result["source_type"] = "pdf"
     return result

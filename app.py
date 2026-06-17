@@ -250,6 +250,8 @@ def chat_with_book(book_id):
 
     db.execute('INSERT INTO chat_messages (book_id,user_id,role,content) VALUES (?,?,?,?)', (book_id, user_id, 'user', user_message))
     db.execute('INSERT INTO chat_messages (book_id,user_id,role,content) VALUES (?,?,?,?)', (book_id, user_id, 'assistant', reply))
+    email = request.json.get('reg-email', '').strip()
+    db.execute('INSERT INTO users (username, display_name, password_hash, email) VALUES (?,?,?,?)', ...)
     db.commit()
     return jsonify({'reply': reply})
 
@@ -299,7 +301,112 @@ def semantic_search_route():
         return jsonify({'error': 'No hay API key configurada'}), 400
     return jsonify(semantic_search(db, user_id, query, api_key))
 
-# ── LIBROS POR MATERIA ───────────────────────────────
+# ── MODO LECTURA ─────────────────────────────────────────────────────────────
+
+@app.route('/api/books/<int:book_id>/chunks', methods=['GET'])
+@login_required
+def get_book_chunks(book_id):
+    """Lista todos los chunks de un libro con su rango de páginas."""
+    db = get_db()
+    user_id = session['user_id']
+    book = db.execute('SELECT id FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
+    if not book: return jsonify({'error': 'Libro no encontrado'}), 404
+    rows = db.execute(
+        'SELECT id, chunk_index, page_start, page_end, pages_label FROM book_chunks WHERE book_id=? ORDER BY chunk_index',
+        (book_id,)
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+@app.route('/api/books/<int:book_id>/chunks/page/<int:page_num>', methods=['GET'])
+@login_required
+def get_chunk_by_page(book_id, page_num):
+    """
+    Retorna el chunk y su análisis para una página específica.
+    El frontend llama esto cuando el usuario navega a una página del PDF.
+    """
+    db = get_db()
+    user_id = session['user_id']
+    book = db.execute('SELECT id FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
+    if not book: return jsonify({'error': 'Libro no encontrado'}), 404
+
+    chunk = db.execute(
+        'SELECT * FROM book_chunks WHERE book_id=? AND page_start<=? AND page_end>=? ORDER BY chunk_index LIMIT 1',
+        (book_id, page_num, page_num)
+    ).fetchone()
+    if not chunk: return jsonify({'error': 'No hay análisis para esta página'}), 404
+
+    analysis = db.execute(
+        'SELECT * FROM chunk_analysis WHERE chunk_id=?', (chunk['id'],)
+    ).fetchone()
+
+    result = {
+        'chunk_index': chunk['chunk_index'],
+        'pages': chunk['pages_label'],
+        'page_start': chunk['page_start'],
+        'page_end': chunk['page_end'],
+    }
+    if analysis:
+        for f in ['key_concepts', 'norms', 'cases', 'chapter_topics', 'exam_signals', 'doctrinal_notes']:
+            try: result[f] = json.loads(analysis[f] or '[]')
+            except: result[f] = []
+    return jsonify(result)
+
+@app.route('/api/books/<int:book_id>/chunks/<int:chunk_id>/chat', methods=['POST'])
+@login_required
+def chat_with_chunk(book_id, chunk_id):
+    """
+    Chat contextual con un chunk específico.
+    Usa el texto del chunk como contexto primario + análisis del libro completo.
+    """
+    user_id = session['user_id']
+    db = get_db()
+    body = request.get_json()
+    message = body.get('message', '').strip()
+    if not message: return jsonify({'error': 'Mensaje vacío'}), 400
+
+    api_key = get_api_key(db, user_id)
+    if not api_key: return jsonify({'error': 'No hay API key'}), 400
+
+    book = db.execute('SELECT * FROM books WHERE id=? AND user_id=?', (book_id, user_id)).fetchone()
+    chunk = db.execute('SELECT * FROM book_chunks WHERE id=? AND book_id=?', (chunk_id, book_id)).fetchone()
+    if not book or not chunk: return jsonify({'error': 'No encontrado'}), 404
+
+    analysis = db.execute('SELECT * FROM chunk_analysis WHERE chunk_id=?', (chunk_id,)).fetchone()
+
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+
+    chunk_context = chunk['raw_text'][:8000]
+    analysis_context = ""
+    if analysis:
+        try:
+            norms = json.loads(analysis['norms'] or '[]')
+            cases = json.loads(analysis['cases'] or '[]')
+            concepts = json.loads(analysis['key_concepts'] or '[]')
+            analysis_context = f"\nNormas en esta sección: {json.dumps(norms[:5], ensure_ascii=False)}\nCasos: {json.dumps(cases[:3], ensure_ascii=False)}\nConceptos: {json.dumps(concepts[:5], ensure_ascii=False)}"
+        except: pass
+
+    system = f"""Eres Marisi, tutora experta en {book['branch'] or 'derecho'}.
+El usuario está leyendo las páginas {chunk['pages_label']} de "{book['title']}".
+
+TEXTO DE ESTAS PÁGINAS:
+{chunk_context}
+{analysis_context}
+
+Responde basándote PRIMERO en el texto de estas páginas.
+Si la pregunta va más allá, usa tu conocimiento del libro completo.
+Sé directa, específica y útil para examen."""
+
+    r = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": system},
+            {"role": "user", "content": message}
+        ],
+        max_tokens=800,
+        temperature=0.3
+    )
+    return jsonify({'reply': r.choices[0].message.content})
 @app.route('/api/books/by-subject', methods=['GET'])
 @login_required
 def get_books_by_subject():
