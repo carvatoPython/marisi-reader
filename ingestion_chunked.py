@@ -442,6 +442,8 @@ Responde SOLO con JSON válido:
         response_format={"type": "json_object"}
     )
     raw = r.choices[0].message.content.strip()
+    print("LONGITUD RESPUESTA:", len(raw))
+    print(raw[-1000:])
     result = json.loads(raw)
 
     # Garantizar campos
