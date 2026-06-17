@@ -65,56 +65,81 @@ def _scale_synthesis_tokens(pages: int, kb_concept_count: int = 0) -> int:
 def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
     """
     Extrae el PDF completo dividiéndolo en chunks de ~15 páginas.
+    Fallback en cascada por página: pdfplumber → PyMuPDF → placeholder.
     Retorna lista de chunks y total de páginas.
     """
-
-    import os
-    import gc
+    import os, gc
 
     size_mb = os.path.getsize(filepath) / (1024 * 1024)
     print(f"📚 PDF: {size_mb:.2f} MB")
 
-    chunks = []
-    total_pages = 0
-
+    # Contar páginas con pdfplumber sin abrir todo el contenido
     with pdfplumber.open(filepath) as pdf:
-
         total_pages = len(pdf.pages)
-        print(f"📖 Total páginas: {total_pages}")
-        buffer = ""
-        chunk_start = 1
+    print(f"📖 Total páginas: {total_pages}")
 
-        for i, page in enumerate(pdf.pages):
-            page_num = i + 1
-            print(f"📄 Extrayendo página {page_num}/{total_pages}")
-            text = page.extract_text() or ""
-            print(f"Caracteres: {len(text)}")
+    chunks = []
+    skipped = []
+    buffer = ""
+    chunk_start = 1
 
-            
-            buffer += text + "\n"
+    for i in range(total_pages):
+        page_num = i + 1
+        print(f"📄 Extrayendo página {page_num}/{total_pages}")
+        text = ""
 
-            del text
-            gc.collect()
+        # ── Intento 1: pdfplumber ──────────────────────────────────────────
+        try:
+            with pdfplumber.open(filepath) as pdf:
+                page = pdf.pages[i]
+                # Páginas con objetos PDF muy complejos matan la memoria
+                raw_size = len(str(page.objects))
+                if raw_size > 400_000:
+                    raise MemoryError(f"Página demasiado compleja ({raw_size} obj)")
+                text = page.extract_text() or ""
+                if len(text) > 15_000:
+                    text = text[:15_000]
+        except Exception as e1:
+            # ── Intento 2: PyMuPDF ────────────────────────────────────────
+            try:
+                import fitz
+                doc = fitz.open(filepath)
+                text = doc[i].get_text("text") or ""
+                doc.close()
+                if len(text) > 15_000:
+                    text = text[:15_000]
+                print(f"✓ Página {page_num} rescatada con PyMuPDF")
+            except Exception as e2:
+                # ── Intento 3: placeholder ────────────────────────────────
+                print(f"⚠ Página {page_num} omitida — pdfplumber: {e1} | PyMuPDF: {e2}")
+                skipped.append(page_num)
+                text = f"[PÁGINA {page_num} OMITIDA POR ERROR DE EXTRACCIÓN]"
 
-    
-            is_last = page_num == total_pages
-            is_full = (
-                len(buffer) >= CHARS_PER_CHUNK
-                or (page_num - chunk_start + 1) >= PAGES_PER_CHUNK
-            )
+        print(f"Caracteres: {len(text)}")
+        buffer += text + "\n"
+        del text
+        gc.collect()
 
-            if is_full or is_last:
-                if buffer.strip():
-                    chunks.append({
-                        "index": len(chunks),
-                        "pages": f"{chunk_start}–{page_num}",
-                        "page_start": chunk_start,
-                        "page_end": page_num,
-                        "text": buffer[:CHARS_PER_CHUNK]
-                    })
+        is_last = page_num == total_pages
+        is_full = (
+            len(buffer) >= CHARS_PER_CHUNK
+            or (page_num - chunk_start + 1) >= PAGES_PER_CHUNK
+        )
 
-                buffer = ""
-                chunk_start = page_num + 1
+        if is_full or is_last:
+            if buffer.strip():
+                chunks.append({
+                    "index": len(chunks),
+                    "pages": f"{chunk_start}–{page_num}",
+                    "page_start": chunk_start,
+                    "page_end": page_num,
+                    "text": buffer[:CHARS_PER_CHUNK]
+                })
+            buffer = ""
+            chunk_start = page_num + 1
+
+    if skipped:
+        print(f"📋 {total_pages - len(skipped)}/{total_pages} páginas extraídas. Omitidas: {skipped}")
 
     return chunks, total_pages
 
