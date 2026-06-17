@@ -21,8 +21,43 @@ from openai import OpenAI
 PAGES_PER_CHUNK = 15       # páginas por fragmento
 CHARS_PER_CHUNK = 18_000   # ~15 páginas densas en caracteres
 MAX_WORKERS = 3            # llamadas GPT paralelas máximo
-CHUNK_MAX_TOKENS = 2500    # tokens por análisis de chunk
-SYNTHESIS_MAX_TOKENS = 8000  # tokens para síntesis final (guía ejecutiva, no JSON exhaustivo)
+CHUNK_MAX_TOKENS = 3000    # tokens por análisis de chunk (subido de 2500: el schema
+                            # ahora captura relación norma<->sentencia y señales de examen)
+
+
+def _scale_synthesis_tokens(pages: int, kb_concept_count: int = 0) -> int:
+    """
+    Escala el presupuesto de tokens de la síntesis final según el tamaño real
+    del libro. No tiene sentido gastar el mismo presupuesto en un libro de
+    50 páginas que en uno de 600 — y tampoco tiene sentido quedarse corto
+    en libros grandes con knowledge bases enormes.
+
+    Bandas (ajustadas tras agregar las secciones de inteligencia académica:
+    study_priority, exam_traps, hidden_connections, jurisprudential_evolution):
+      <= 80 págs   → 5,000 tokens
+      <= 200 págs  → 7,000 tokens
+      <= 400 págs  → 9,000 tokens
+      <= 700 págs  → 11,000 tokens
+      > 700 págs   → 13,000 tokens (tope)
+    """
+    if pages <= 80:
+        base = 5000
+    elif pages <= 200:
+        base = 7000
+    elif pages <= 400:
+        base = 9000
+    elif pages <= 700:
+        base = 11000
+    else:
+        base = 13000
+
+    # Si el KB tiene muchísimos conceptos únicos (libro muy denso aunque corto
+    # en páginas, ej. un código con cientos de artículos), dale un poco más
+    # de margen sin pasar el tope de 13,000.
+    if kb_concept_count > 150:
+        base = min(base + 2000, 13000)
+
+    return base
 
 
 # ── EXTRACCIÓN POR CHUNKS ─────────────────────────────────────────────────────
@@ -96,17 +131,29 @@ def _analyze_chunk(chunk: dict, chunk_index: int, total_chunks: int,
     type_instructions = {
         'legal': """Extrae del fragmento:
 - norms: TODAS las normas citadas (ley, decreto, artículo, código) con su contenido exacto
-- cases: todos los fallos y sentencias con tribunal, año y ratio decidendi
+- cases: todos los fallos y sentencias con tribunal, año y ratio decidendi.
+  CRÍTICO: para cada caso, identifica explícitamente QUÉ NORMA/ARTÍCULO reinterpreta
+  o aplica (campo "reinterprets_norm"), y describe el cambio concreto que produjo
+  (campo "interpretation_shift": qué decía/se entendía ANTES de este fallo y qué
+  cambió DESPUÉS — si el fragmento no lo deja claro, indica null, no inventes)
 - key_concepts: conceptos jurídicos con definición doctrinal rigurosa y fuente
 - chapter_topics: temas o secciones identificadas en este fragmento
-- doctrinal_notes: posiciones doctrinales, debates o notas del autor""",
+- doctrinal_notes: posiciones doctrinales, debates o notas del autor
+- exam_signals: señales explícitas en el texto de que un tema es "clásico de examen"
+  (ej. el autor dice "este artículo es ampliamente debatido", "tema recurrente en
+  jurisprudencia", repite un artículo varias veces, lo señala como fundamental, etc.)""",
 
         'tech': """Extrae del fragmento:
 - concepts: conceptos técnicos con definición y ejemplo de uso
-- tools: herramientas o librerías mencionadas con su propósito
+- tools: herramientas o librerías mencionadas con su propósito.
+  Para cada una, si el texto lo permite, indica "common_mistake" (el error típico
+  al usarla que el autor menciona o que es bien conocido en la práctica) y
+  "interview_relevance" (si suele aparecer en entrevistas técnicas o en producción)
 - chapter_topics: temas o secciones en este fragmento
 - code_patterns: patrones o estructuras de código relevantes
-- warnings: advertencias o errores comunes que menciona el autor""",
+- warnings: advertencias o errores comunes que menciona el autor
+- exam_signals: señales de que un tema es fundamental o recurrente (el autor lo repite,
+  lo marca como clave, lo conecta con varios capítulos, etc.)""",
 
         'data_science': """Extrae del fragmento:
 - algorithms: algoritmos con intuición y caso de uso
@@ -138,7 +185,8 @@ Fragmento {chunk_index + 1} de {total_chunks} — Páginas {chunk['pages']}
 IMPORTANTE:
 - Extrae TODO lo relevante de este fragmento, sin omitir nada
 - Sé específico y riguroso — esto se acumulará con otros fragmentos
-- No inventes información que no esté en el texto
+- No inventes información que no esté en el texto. Si una relación (ej. qué artículo
+  reinterpreta una sentencia) no es clara en el fragmento, usa null — no la inventes.
 
 {instructions}
 
@@ -157,7 +205,13 @@ Responde SOLO con JSON válido:
     {{"norm": "identificación exacta", "content": "qué establece", "context": "cómo la usa el autor"}}
   ],
   "cases": [
-    {{"case": "nombre del caso/sentencia", "court": "tribunal", "year": "año", "ratio": "qué establece"}}
+    {{"case": "nombre del caso/sentencia", "court": "tribunal", "year": "año", "ratio": "qué establece",
+      "reinterprets_norm": "norma/artículo exacto que reinterpreta, o null",
+      "interpretation_shift": "qué cambió antes/después según el texto, o null"}}
+  ],
+  "tools": [
+    {{"name": "nombre", "purpose": "para qué sirve", "common_mistake": "error típico o null",
+      "interview_relevance": "si aplica a entrevistas/producción o null"}}
   ],
   "supporting_elements": [
     {{"type": "herramienta|algoritmo|ejemplo|ejercicio|argumento", "name": "nombre", "detail": "detalle"}}
@@ -167,6 +221,9 @@ Responde SOLO con JSON válido:
   ],
   "doctrinal_notes": [
     "posición doctrinal, debate o nota relevante del autor"
+  ],
+  "exam_signals": [
+    "señal textual de que este tema es relevante para examen/entrevista"
   ]
 }}"""
 
@@ -189,9 +246,11 @@ Responde SOLO con JSON válido:
             "key_concepts": [],
             "norms": [],
             "cases": [],
+            "tools": [],
             "supporting_elements": [],
             "important_quotes": [],
-            "doctrinal_notes": []
+            "doctrinal_notes": [],
+            "exam_signals": []
         }
 
 
@@ -207,15 +266,18 @@ def _accumulate_knowledge(chunk_results: list[dict]) -> dict:
         "key_concepts": [],
         "norms": [],
         "cases": [],
+        "tools": [],
         "supporting_elements": [],
         "important_quotes": [],
         "doctrinal_notes": [],
+        "exam_signals": [],
         "chunks_processed": len(chunk_results)
     }
 
     seen_concepts = set()
     seen_norms = set()
     seen_cases = set()
+    seen_tools = set()
 
     for chunk in chunk_results:
         # Tópicos de capítulos
@@ -237,12 +299,21 @@ def _accumulate_knowledge(chunk_results: list[dict]) -> dict:
                 seen_norms.add(key)
                 kb["norms"].append(n)
 
-        # Casos — deduplica por nombre
+        # Casos — deduplica por nombre. Conserva reinterprets_norm e
+        # interpretation_shift si el chunk los capturó (pueden venir como
+        # null si el fragmento no dejaba clara la relación).
         for case in chunk.get("cases", []):
             key = case.get("case", "").lower().strip()
             if key and key not in seen_cases:
                 seen_cases.add(key)
                 kb["cases"].append(case)
+
+        # Herramientas — deduplica por nombre, conserva common_mistake/interview_relevance
+        for t in chunk.get("tools", []):
+            key = t.get("name", "").lower().strip()
+            if key and key not in seen_tools:
+                seen_tools.add(key)
+                kb["tools"].append(t)
 
         # Elementos de soporte (sin deduplicar — pueden repetirse con diferente contexto)
         kb["supporting_elements"].extend(chunk.get("supporting_elements", []))
@@ -253,6 +324,9 @@ def _accumulate_knowledge(chunk_results: list[dict]) -> dict:
 
         # Notas doctrinales
         kb["doctrinal_notes"].extend(chunk.get("doctrinal_notes", []))
+
+        # Señales de relevancia para examen/entrevista
+        kb["exam_signals"].extend(chunk.get("exam_signals", []))
 
     return kb
 
@@ -292,8 +366,10 @@ def _synthesize_full(
         "key_concepts": knowledge_base["key_concepts"][:40],
         "norms": knowledge_base["norms"][:40],
         "cases": knowledge_base["cases"][:30],
+        "tools": knowledge_base.get("tools", [])[:30],
         "doctrinal_notes": knowledge_base["doctrinal_notes"][:30],
         "important_quotes": knowledge_base["important_quotes"][:20],
+        "exam_signals": knowledge_base.get("exam_signals", [])[:40],
         "chunks_processed": knowledge_base["chunks_processed"],
         "total_concepts_in_kb": len(knowledge_base["key_concepts"]),
         "total_norms_in_kb": len(knowledge_base["norms"]),
@@ -343,10 +419,34 @@ MODO MENTOR — summary:
 exam_questions (10): Análisis de casos hipotéticos, problemas jurídicos reales,
   no memorización. Basadas en el contenido REAL del libro completo.
 
+study_priority: A partir de exam_signals y de qué normas/conceptos se repiten más
+  en el knowledge base, identifica 8-12 artículos/temas con ALTA probabilidad de
+  examen. Ordénalos por prioridad. Si no hay evidencia suficiente para distinguir
+  prioridad real, dilo explícitamente en lugar de inventar un orden arbitrario.
+
+exam_traps: Para los 5-8 temas más propensos a confusión (basado en doctrinal_notes,
+  exam_signals, o normas con múltiples interpretaciones en el KB), describe el
+  error conceptual típico que comete un estudiante y la aclaración correcta.
+
+hidden_connections: A partir de norms y cases, identifica 3-6 cadenas reales de
+  artículos/conceptos que suelen estudiarse o aparecer juntos (porque el propio
+  texto los conecta, los cita en la misma sección, o una sentencia desarrolla
+  varios). No inventes conexiones que el material no sugiera.
+
+jurisprudential_evolution: USA el campo reinterprets_norm e interpretation_shift
+  de los casos en el knowledge base. Para cada caso que SÍ tenga esa información
+  (ignora los que tengan null), construye una entrada mostrando qué norma
+  reinterpretó y qué cambió antes/después. Si ningún caso del KB tiene esta
+  información completa, devuelve una lista vacía — no inventes la evolución.
+
 CRÍTICO: Esta es una guía ejecutiva de estudio, no un volcado exhaustivo.
 Selecciona con criterio lo más importante — la base de conocimiento completa
 del libro ya está preservada por separado y sigue disponible para consultas
 puntuales (por ejemplo en el chat). Calidad y relevancia, no cantidad.
+Para study_priority, exam_traps, hidden_connections y jurisprudential_evolution:
+basa todo en evidencia real del knowledge base (exam_signals, doctrinal_notes,
+reinterprets_norm). Si la evidencia es insuficiente para alguna sección, es
+preferible devolver una lista corta y honesta que una lista larga inventada.
 """,
         'tech': """
 MODO GUÍA EJECUTIVA — key_concepts (selecciona los 15 más importantes):
@@ -354,13 +454,28 @@ MODO GUÍA EJECUTIVA — key_concepts (selecciona los 15 más importantes):
   Con ejemplos reales de uso.
 
 tools_frameworks: Selecciona las herramientas más relevantes con trade-offs reales.
+  Usa los campos common_mistake e interview_relevance del knowledge base cuando existan.
 
 chapter_map: Mapa de las secciones principales del libro.
 
 exam_questions (10): Problemas reales de producción, no teoría.
 
+study_priority: A partir de exam_signals, identifica 8-12 conceptos/herramientas con
+  alta probabilidad de aparecer en entrevistas técnicas o ser fundamentales en
+  producción. Ordénalos por prioridad real, basado en evidencia del KB.
+
+exam_traps: Para 5-8 conceptos propensos a confusión (usa common_mistake y warnings
+  del KB), describe el error típico (ej. "confundir REST con HTTP") y la aclaración
+  correcta. Si el KB no tiene suficiente señal de errores comunes, sé honesto y
+  devuelve una lista más corta en vez de inventar errores genéricos.
+
+hidden_connections: A partir de concepts y tools, identifica 3-6 cadenas de conceptos
+  que el propio libro conecta o que suelen usarse juntos en la práctica real
+  (ej. "este patrón se usa junto con esta herramienta para resolver X").
+
 CRÍTICO: Guía ejecutiva, no volcado exhaustivo. La base de conocimiento completa
-sigue disponible por separado.
+sigue disponible por separado. Basa study_priority, exam_traps y hidden_connections
+en evidencia real del KB — si falta evidencia, prefiere listas cortas y honestas.
 """,
         'personal': """
 MODO GUÍA EJECUTIVA — key_concepts (selecciona los 10 más importantes):
@@ -456,14 +571,33 @@ Responde SOLO con JSON válido:
     "most_cited_moment": "el tema o norma más citada por estudiantes",
     "common_misconception": "el error más común al estudiar este libro",
     "community_debate": "debate académico principal sobre el contenido"
-  }}
+  }},
+
+  "study_priority": [
+    {{"topic": "artículo/norma/concepto", "reason": "por qué tiene alta probabilidad de examen, basado en evidencia del KB"}}
+  ],
+
+  "exam_traps": [
+    {{"topic": "tema propenso a confusión", "common_error": "qué suelen creer mal los estudiantes", "correct_clarification": "la aclaración correcta"}}
+  ],
+
+  "hidden_connections": [
+    {{"chain": ["elemento A", "elemento B", "elemento C"], "why_connected": "por qué el texto los conecta o por qué suelen estudiarse/usarse juntos"}}
+  ],
+
+  "jurisprudential_evolution": [
+    {{"norm": "artículo/norma reinterpretada", "case": "sentencia/fallo", "before": "qué se entendía antes", "after": "qué cambió después"}}
+  ]
 }}"""
+
+    synthesis_tokens = _scale_synthesis_tokens(pages, kb_for_prompt["total_concepts_in_kb"])
+    print(f"🎛️  Presupuesto de tokens para síntesis: {synthesis_tokens} (libro de {pages} páginas)")
 
     r = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.3,
-        max_tokens=SYNTHESIS_MAX_TOKENS,
+        max_tokens=synthesis_tokens,
         response_format={"type": "json_object"}
     )
 
@@ -475,7 +609,9 @@ Responde SOLO con JSON válido:
     result["pages"] = pages
     for f in ["key_concepts", "norms", "jurisprudence", "tools_frameworks",
               "action_items", "exam_questions", "chapter_map",
-              "why_this_book_matters", "concept_map"]:
+              "why_this_book_matters", "concept_map",
+              "study_priority", "exam_traps", "hidden_connections",
+              "jurisprudential_evolution"]:
         if f not in result:
             result[f] = []
     if "debate_suggestion" not in result:
@@ -573,9 +709,14 @@ def process_pdf_chunked(
     # ── Paso 3: Acumular knowledge base ─────────────────────────────────────
     _progress("accumulate", 0, 1, "Construyendo base de conocimiento...")
     knowledge_base = _accumulate_knowledge(chunk_results)
+    cases_with_norm_link = sum(
+        1 for c in knowledge_base['cases'] if c.get('reinterprets_norm')
+    )
     stats = (f"{len(knowledge_base['key_concepts'])} conceptos, "
              f"{len(knowledge_base['norms'])} normas, "
-             f"{len(knowledge_base['cases'])} casos")
+             f"{len(knowledge_base['cases'])} casos "
+             f"({cases_with_norm_link} con relación norma↔sentencia capturada), "
+             f"{len(knowledge_base.get('tools', []))} herramientas")
     _progress("accumulate", 1, 1, f"Knowledge base: {stats}")
 
     # ── Paso 4: Síntesis final ──────────────────────────────────────────────
