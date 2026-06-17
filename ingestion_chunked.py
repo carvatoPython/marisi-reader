@@ -16,7 +16,6 @@ Arquitectura de procesamiento en background:
 import json, re, time
 import pdfplumber
 from openai import OpenAI
-import os
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PAGES_PER_CHUNK = 15       # páginas por fragmento
@@ -29,19 +28,20 @@ SYNTHESIS_MAX_TOKENS = 6000  # tokens para síntesis final
 # ── EXTRACCIÓN POR CHUNKS ─────────────────────────────────────────────────────
 
 def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
-    import os
-
-    size_mb = os.path.getsize(filepath) / (1024 * 1024)
-    print(f"📚 PDF: {size_mb:.2f} MB")
-    
     """
     Extrae el PDF completo dividiéndolo en chunks de ~15 páginas.
     Retorna lista de chunks y total de páginas.
     """
+
+    import os
+    size_mb = os.path.getsize(filepath) / (1024 * 1024)
+    print(f"📚 PDF: {size_mb:.2f} MB")
+
     chunks = []
     total_pages = 0
 
     with pdfplumber.open(filepath) as pdf:
+
         total_pages = len(pdf.pages)
         print(f"📖 Total páginas: {total_pages}")
         buffer = ""
@@ -49,8 +49,6 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
 
         for i, page in enumerate(pdf.pages):
             page_num = i + 1
-
-            # 👇 AGREGAR ESTO
             print(f"📄 Extrayendo página {page_num}/{total_pages}")
 
             text = page.extract_text() or ""
