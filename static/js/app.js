@@ -346,6 +346,7 @@ function switchBookTab(tab) {
   if (tab === 'characters') renderCharactersTab(id);
   if (tab === 'memory') renderMemoryTab(id);
   if (tab === 'connections') renderConnectionsTab(id);
+  if (tab === 'read') renderReadingMode(id);
 }
 
 function renderBookOverview(book, id) {
@@ -1328,6 +1329,195 @@ async function finishGame() {
         <button class="btn-ghost" onclick="openBook(${GAME_STATE.bookId})">Volver al libro</button>
       </div>
     </div>`;
+}
+
+/* ── MODO LECTURA ─────────────────────────────────────────────────────────── */
+
+let READ_STATE = { chunks: [], currentChunk: null, bookId: null };
+
+async function renderReadingMode(bookId) {
+  READ_STATE.bookId = bookId;
+  const el = document.getElementById('read-content');
+  if (!el) return;
+
+  el.innerHTML = `<div class="read-loading">📚 Cargando índice de páginas…</div>`;
+
+  const chunks = await api(`/api/books/${bookId}/chunks`);
+  if (!chunks || !chunks.length) {
+    el.innerHTML = `<div class="read-empty">
+      <p>Este libro no tiene modo lectura disponible.</p>
+      <p class="muted-text">Solo los libros procesados con el motor de chunks tienen esta función.</p>
+    </div>`;
+    return;
+  }
+
+  READ_STATE.chunks = chunks;
+  _renderReadLayout(el, bookId, chunks);
+  _loadChunkByIndex(0);
+}
+
+function _renderReadLayout(el, bookId, chunks) {
+  el.innerHTML = `
+    <div class="read-layout">
+      <!-- Panel izquierdo: índice de chunks -->
+      <div class="read-index">
+        <div class="read-index-title">📑 Secciones</div>
+        <div class="read-index-list">
+          ${chunks.map((c, i) => `
+            <div class="read-index-item" id="ridx-${i}" onclick="_loadChunkByIndex(${i})">
+              <span class="read-pages">Págs. ${c.pages_label}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- Panel central: texto del chunk -->
+      <div class="read-text-panel">
+        <div id="read-text-content" class="read-text-content">
+          <div class="read-loading">Selecciona una sección…</div>
+        </div>
+        <div class="read-nav">
+          <button class="btn-ghost-sm" onclick="_readNav(-1)">← Anterior</button>
+          <span id="read-nav-label" class="read-nav-label"></span>
+          <button class="btn-ghost-sm" onclick="_readNav(1)">Siguiente →</button>
+        </div>
+      </div>
+
+      <!-- Panel derecho: análisis de Marisi -->
+      <div class="read-analysis-panel">
+        <div class="read-analysis-header">🧠 Marisi dice</div>
+        <div id="read-analysis-content" class="read-analysis-content">
+          <div class="muted-text" style="padding:1rem;font-size:.85rem">
+            Selecciona una sección para ver el análisis.
+          </div>
+        </div>
+        <!-- Chat contextual -->
+        <div class="read-chat">
+          <div class="read-chat-title">💬 Pregunta sobre estas páginas</div>
+          <div id="read-chat-messages" class="read-chat-messages"></div>
+          <div class="read-chat-input">
+            <input type="text" id="read-chat-input"
+              placeholder="¿Qué significa el art. 29?"
+              onkeydown="if(event.key==='Enter') sendReadChat()">
+            <button onclick="sendReadChat()">→</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function _loadChunkByIndex(index) {
+  const chunks = READ_STATE.chunks;
+  if (index < 0 || index >= chunks.length) return;
+
+  READ_STATE.currentChunk = index;
+  const chunk = chunks[index];
+
+  // Destacar en el índice
+  document.querySelectorAll('.read-index-item').forEach(el => el.classList.remove('active'));
+  document.getElementById(`ridx-${index}`)?.classList.add('active');
+  document.getElementById('read-nav-label').textContent = `Sección ${index + 1} / ${chunks.length}`;
+
+  // Cargar análisis del chunk desde el backend
+  const bookId = READ_STATE.bookId;
+  const pageStart = chunk.page_start;
+
+  document.getElementById('read-text-content').innerHTML = `<div class="read-loading">Cargando análisis…</div>`;
+  document.getElementById('read-analysis-content').innerHTML = `<div class="read-loading">…</div>`;
+  document.getElementById('read-chat-messages').innerHTML = '';
+
+  const data = await api(`/api/books/${bookId}/chunks/page/${pageStart}`);
+  if (!data || data.error) {
+    document.getElementById('read-text-content').innerHTML = `<p class="muted-text">Sin análisis disponible para esta sección.</p>`;
+    return;
+  }
+
+  // Panel central: info de la sección
+  document.getElementById('read-text-content').innerHTML = `
+    <div class="read-section-header">
+      <h3>Páginas ${data.pages}</h3>
+      ${data.chapter_topics?.length ? `
+        <div class="read-topics">
+          ${data.chapter_topics.map(t => `<span class="read-topic-tag">${esc(t)}</span>`).join('')}
+        </div>` : ''}
+    </div>`;
+
+  // Panel derecho: análisis
+  const concepts = data.key_concepts || [];
+  const norms = data.norms || [];
+  const cases = data.cases || [];
+  const signals = data.exam_signals || [];
+
+  document.getElementById('read-analysis-content').innerHTML = `
+    ${signals.length ? `
+      <div class="read-section">
+        <div class="read-section-title">🎯 Señales de examen</div>
+        ${signals.map(s => `<div class="read-signal">${esc(typeof s === 'string' ? s : s.signal || JSON.stringify(s))}</div>`).join('')}
+      </div>` : ''}
+
+    ${concepts.length ? `
+      <div class="read-section">
+        <div class="read-section-title">💡 Conceptos clave</div>
+        ${concepts.slice(0, 6).map(c => `
+          <div class="read-concept">
+            <strong>${esc(c.term)}</strong>
+            <p>${esc(c.definition)}</p>
+          </div>`).join('')}
+      </div>` : ''}
+
+    ${norms.length ? `
+      <div class="read-section">
+        <div class="read-section-title">📜 Normas citadas</div>
+        ${norms.slice(0, 8).map(n => `
+          <div class="read-norm">
+            <strong>${esc(n.norm)}</strong>
+            <p>${esc(n.content || n.context || '')}</p>
+          </div>`).join('')}
+      </div>` : ''}
+
+    ${cases.length ? `
+      <div class="read-section">
+        <div class="read-section-title">⚖️ Jurisprudencia</div>
+        ${cases.slice(0, 4).map(c => `
+          <div class="read-case">
+            <strong>${esc(c.case)}</strong>
+            <span class="muted-text">${esc(c.court || '')} ${esc(c.year || '')}</span>
+            <p>${esc(c.ratio || c.contribution || '')}</p>
+          </div>`).join('')}
+      </div>` : ''}`;
+}
+
+function _readNav(dir) {
+  const next = READ_STATE.currentChunk + dir;
+  if (next >= 0 && next < READ_STATE.chunks.length) {
+    _loadChunkByIndex(next);
+  }
+}
+
+async function sendReadChat() {
+  const input = document.getElementById('read-chat-input');
+  const msg = input.value.trim();
+  if (!msg) return;
+  input.value = '';
+
+  const bookId = READ_STATE.bookId;
+  const chunkIndex = READ_STATE.currentChunk;
+  const chunk = READ_STATE.chunks[chunkIndex];
+  if (!chunk) return;
+
+  const msgs = document.getElementById('read-chat-messages');
+  msgs.innerHTML += `<div class="read-chat-msg user">${esc(msg)}</div>`;
+  msgs.innerHTML += `<div class="read-chat-msg assistant" id="read-typing">…</div>`;
+  msgs.scrollTop = msgs.scrollHeight;
+
+  const res = await api(`/api/books/${bookId}/chunks/${chunk.id}/chat`, {
+    method: 'POST',
+    body: JSON.stringify({ message: msg })
+  });
+
+  document.getElementById('read-typing').outerHTML =
+    `<div class="read-chat-msg assistant">${esc(res.reply || 'Sin respuesta')}</div>`;
+  msgs.scrollTop = msgs.scrollHeight;
 }
 
 /* ── PWA ──────────────────────────── */

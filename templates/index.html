@@ -115,6 +115,7 @@
       <!-- Book tabs -->
       <div class="book-tabs-bar" id="book-tabs-bar">
         <button class="book-tab active" onclick="switchBookTab('overview')" id="btab-overview">📖 Libro</button>
+        <button class="book-tab" onclick="switchBookTab('read')" id="btab-read">📄 Leer</button>
         <button class="book-tab" onclick="switchBookTab('reflection')" id="btab-reflection">🪞 Reflexión</button>
         <button class="book-tab" onclick="switchBookTab('debate')" id="btab-debate">⚔️ Debate</button>
         <button class="book-tab" onclick="switchBookTab('characters')" id="btab-characters">🎭 Personajes</button>
@@ -123,6 +124,9 @@
       </div>
       <div id="book-tab-overview" class="book-tab-panel active">
         <div id="book-content" class="book-content-wrap"></div>
+      </div>
+      <div id="book-tab-read" class="book-tab-panel">
+        <div id="read-content" class="read-content-wrap"></div>
       </div>
       <div id="book-tab-reflection" class="book-tab-panel">
         <div id="reflection-content" class="book-content-wrap"></div>
