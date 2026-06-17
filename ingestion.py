@@ -13,7 +13,7 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 import pdfplumber
 
-MAX_CHARS = 580000
+MAX_CHARS = 120000
 
 CONTENT_TYPES = {
     'legal':        {'label': 'Jurídico / Derecho'},
@@ -47,7 +47,7 @@ def extract_from_image(filepath, api_key):
         messages=[{"role":"user","content":[
             {"type":"image_url","image_url":{"url":f"data:image/{mime};base64,{b64}"}},
             {"type":"text","text":"Transcribe TODO el texto de la imagen completa y ordenadamente. Solo el texto."}
-        ]}], max_tokens=40000)
+        ]}], max_tokens=8000)
     return r.choices[0].message.content.strip(), 1
 
 def extract_from_url(url, api_key):
@@ -88,7 +88,7 @@ def extract_from_docx(filepath):
 
 # ─── LLAMADA A GPT ────────────────────────────────────────────────────────────
 
-def _gpt(client, prompt, max_tokens=2000, temperature=0.3, json_mode=True):
+def _gpt(client, prompt, max_tokens=4000, temperature=0.3, json_mode=True):
     kwargs = dict(
         model="gpt-4o-mini",
         messages=[{"role":"user","content":prompt}],
@@ -231,10 +231,10 @@ Responde SOLO con JSON válido:
 }}
 
 TEXTO DEL LIBRO:
-{text[:60000]}"""
+{text[:600000]}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=4000)
+        return _gpt(client, prompt, max_tokens=8000)
     except Exception as e:
         print(f"⚠ Paso 1 falló: {e}")
         return {}
@@ -292,7 +292,7 @@ Responde SOLO con JSON válido:
 }}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=1500)
+        return _gpt(client, prompt, max_tokens=3000)
     except Exception as e:
         print(f"⚠ Paso 2 falló: {e}")
         return {}
@@ -410,7 +410,7 @@ Responde SOLO con JSON válido:
 }}"""
 
     try:
-        return _gpt(client, prompt, max_tokens=2500)
+        return _gpt(client, prompt, max_tokens=5000)
     except Exception as e:
         print(f"⚠ Paso 3 falló: {e}")
         return {}
@@ -674,7 +674,7 @@ Responde SOLO con JSON válido:
 }}
 """
 
-    result = _gpt(client, prompt, max_tokens=6000, temperature=0.4)
+    result = _gpt(client, prompt, max_tokens=12000, temperature=0.4)
 
     # Garantizar campos presentes
     result['pages'] = pages
