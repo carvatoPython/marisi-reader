@@ -15,7 +15,6 @@ import sqlite3, json, threading, os, time, traceback
 from datetime import datetime
 import sys
 sys.path.append(r"C:\Users\CARVATO\Documents\VScode  archivos\mery")
-from mery.comms import gmail_enviar
 
 
 
@@ -300,6 +299,7 @@ def _run_job(job_id: int, api_key: str, profile_instructions: str,
             user = conn2.execute('SELECT email FROM users WHERE id=?', (user_id,)).fetchone()
             conn2.close()
             if user and user['email']:
+                from mery.comms import gmail_enviar
                 gmail_enviar(
                     destinatario=user['email'],
                     asunto=f"📚 Tu libro está listo: {result.get('title', '---')}",
