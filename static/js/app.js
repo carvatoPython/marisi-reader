@@ -1418,29 +1418,36 @@ async function _loadChunkByIndex(index) {
   document.getElementById(`ridx-${index}`)?.classList.add('active');
   document.getElementById('read-nav-label').textContent = `Sección ${index + 1} / ${chunks.length}`;
 
-  // Cargar análisis del chunk desde el backend
+  // Cargar chunk completo (texto + análisis) desde el backend
   const bookId = READ_STATE.bookId;
   const pageStart = chunk.page_start;
 
-  document.getElementById('read-text-content').innerHTML = `<div class="read-loading">Cargando análisis…</div>`;
+  document.getElementById('read-text-content').innerHTML = `<div class="read-loading">Cargando…</div>`;
   document.getElementById('read-analysis-content').innerHTML = `<div class="read-loading">…</div>`;
   document.getElementById('read-chat-messages').innerHTML = '';
 
   const data = await api(`/api/books/${bookId}/chunks/page/${pageStart}`);
   if (!data || data.error) {
-    document.getElementById('read-text-content').innerHTML = `<p class="muted-text">Sin análisis disponible para esta sección.</p>`;
+    document.getElementById('read-text-content').innerHTML = `<p class="muted-text">Sin contenido disponible para esta sección.</p>`;
     return;
   }
 
-  // Panel central: info de la sección
+  // Guardar chunk_id para el chat
+  READ_STATE.currentChunkId = data.chunk_id;
+
+  // Panel central: TEXTO REAL del libro + temas
+  const rawText = (data.raw_text || '').trim();
   document.getElementById('read-text-content').innerHTML = `
     <div class="read-section-header">
-      <h3>Páginas ${data.pages}</h3>
+      <div class="read-pages-badge">📄 Páginas ${esc(data.pages)}</div>
       ${data.chapter_topics?.length ? `
         <div class="read-topics">
           ${data.chapter_topics.map(t => `<span class="read-topic-tag">${esc(t)}</span>`).join('')}
         </div>` : ''}
-    </div>`;
+    </div>
+    <div class="read-book-text">${rawText ? rawText.split('\n').map(l => l.trim() ? `<p>${esc(l)}</p>` : '<br>').join('') : '<p class="muted-text">Texto no disponible para esta sección.</p>'
+    }</div>`;
+  document.getElementById('read-text-content').scrollTop = 0;
 
   // Panel derecho: análisis
   const concepts = data.key_concepts || [];
@@ -1501,16 +1508,15 @@ async function sendReadChat() {
   input.value = '';
 
   const bookId = READ_STATE.bookId;
-  const chunkIndex = READ_STATE.currentChunk;
-  const chunk = READ_STATE.chunks[chunkIndex];
-  if (!chunk) return;
+  const chunkId = READ_STATE.currentChunkId;
+  if (!chunkId) return;
 
   const msgs = document.getElementById('read-chat-messages');
   msgs.innerHTML += `<div class="read-chat-msg user">${esc(msg)}</div>`;
   msgs.innerHTML += `<div class="read-chat-msg assistant" id="read-typing">…</div>`;
   msgs.scrollTop = msgs.scrollHeight;
 
-  const res = await api(`/api/books/${bookId}/chunks/${chunk.id}/chat`, {
+  const res = await api(`/api/books/${bookId}/chunks/${chunkId}/chat`, {
     method: 'POST',
     body: JSON.stringify({ message: msg })
   });

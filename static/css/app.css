@@ -630,3 +630,22 @@ html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--text);fon
   .read-index-item.active { border-bottom-color: var(--accent, #c9a96e); border-left: none; }
   .read-analysis-panel { max-height: 400px; }
 }
+
+/* Texto real del libro */
+.read-book-text {
+  margin-top: 1rem;
+  font-size: .88rem;
+  line-height: 1.8;
+  color: #ddd;
+  font-family: 'Georgia', serif;
+}
+.read-book-text p { margin: 0 0 .6rem; }
+.read-pages-badge {
+  display: inline-block;
+  background: rgba(201,169,110,.15);
+  color: var(--accent, #c9a96e);
+  border-radius: 20px;
+  padding: .25rem .8rem;
+  font-size: .75rem;
+  margin-bottom: .75rem;
+}

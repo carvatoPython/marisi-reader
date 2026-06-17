@@ -250,8 +250,6 @@ def chat_with_book(book_id):
 
     db.execute('INSERT INTO chat_messages (book_id,user_id,role,content) VALUES (?,?,?,?)', (book_id, user_id, 'user', user_message))
     db.execute('INSERT INTO chat_messages (book_id,user_id,role,content) VALUES (?,?,?,?)', (book_id, user_id, 'assistant', reply))
-    email = request.json.get('reg-email', '').strip()
-    db.execute('INSERT INTO users (username, display_name, password_hash, email) VALUES (?,?,?,?)', ...)
     db.commit()
     return jsonify({'reply': reply})
 
@@ -340,10 +338,12 @@ def get_chunk_by_page(book_id, page_num):
     ).fetchone()
 
     result = {
+        'chunk_id': chunk['id'],
         'chunk_index': chunk['chunk_index'],
         'pages': chunk['pages_label'],
         'page_start': chunk['page_start'],
         'page_end': chunk['page_end'],
+        'raw_text': chunk['raw_text'] or '',
     }
     if analysis:
         for f in ['key_concepts', 'norms', 'cases', 'chapter_topics', 'exam_signals', 'doctrinal_notes']:
