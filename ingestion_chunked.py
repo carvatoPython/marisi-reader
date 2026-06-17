@@ -441,6 +441,10 @@ Responde SOLO con JSON válido:
         max_tokens=SYNTHESIS_MAX_TOKENS,
         response_format={"type": "json_object"}
     )
+
+    print(r.usage)
+    print("Completion tokens:", r.usage.completion_tokens)
+    print("Prompt tokens:", r.usage.prompt_tokens)
     raw = r.choices[0].message.content.strip()
     print("LONGITUD RESPUESTA:", len(raw))
     print(raw[-1000:])
