@@ -34,13 +34,8 @@ def extract_pdf_chunks(filepath: str) -> tuple[list[dict], int]:
     """
 
     import os
-    import psutil
     import gc
 
-
-    process = psutil.Process(os.getpid())
-
-    print(f"RAM: {process.memory_info().rss / 1024 / 1024:.1f} MB")
     size_mb = os.path.getsize(filepath) / (1024 * 1024)
     print(f"📚 PDF: {size_mb:.2f} MB")
 
