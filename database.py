@@ -137,15 +137,8 @@ def init_db(app):
                 FOREIGN KEY (chunk_id) REFERENCES book_chunks(id),
                 FOREIGN KEY (book_id) REFERENCES books(id)
             );
+            CREATE TABLE IF NOT EXISTS flashcard_sets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                book_id INTEGER NOT NULL,
-                user_id INTEGER NOT NULL,
-                cards TEXT DEFAULT '[]',
-                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE(book_id, user_id),
-                FOREIGN KEY (book_id) REFERENCES books(id)
-            );
             CREATE TABLE IF NOT EXISTS reader_mind (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER UNIQUE NOT NULL,
@@ -225,6 +218,7 @@ def _migrate(db):
             'exam_signals': "ALTER TABLE chunk_analysis ADD COLUMN exam_signals TEXT DEFAULT '[]'",
             'doctrinal_notes': "ALTER TABLE chunk_analysis ADD COLUMN doctrinal_notes TEXT DEFAULT '[]'",
         },
+        'reader_mind': {
             'thinking_style': "ALTER TABLE reader_mind ADD COLUMN thinking_style TEXT DEFAULT ''",
             'emotional_profile': "ALTER TABLE reader_mind ADD COLUMN emotional_profile TEXT DEFAULT ''",
             'critical_tendency': "ALTER TABLE reader_mind ADD COLUMN critical_tendency TEXT DEFAULT ''",
@@ -234,6 +228,7 @@ def _migrate(db):
             'main_bias': "ALTER TABLE reader_mind ADD COLUMN main_bias TEXT DEFAULT ''",
             'profile_summary': "ALTER TABLE reader_mind ADD COLUMN profile_summary TEXT DEFAULT ''",
         },
+    }
     for table, cols in migrations.items():
         existing = {row[1] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
         for col_name, ddl in cols.items():
