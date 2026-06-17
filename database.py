@@ -139,6 +139,14 @@ def init_db(app):
             );
             CREATE TABLE IF NOT EXISTS flashcard_sets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                book_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                cards TEXT DEFAULT '[]',
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(book_id, user_id),
+                FOREIGN KEY (book_id) REFERENCES books(id)
+            );
             CREATE TABLE IF NOT EXISTS reader_mind (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER UNIQUE NOT NULL,
@@ -181,6 +189,23 @@ def init_db(app):
                 FOREIGN KEY (user_id) REFERENCES users(id),
                 FOREIGN KEY (book_id) REFERENCES books(id)
             );
+            CREATE TABLE IF NOT EXISTS processing_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                book_id INTEGER,
+                status TEXT NOT NULL DEFAULT 'pending',
+                step TEXT DEFAULT '',
+                progress INTEGER DEFAULT 0,
+                progress_msg TEXT DEFAULT '',
+                source_type TEXT NOT NULL,
+                filepath TEXT,
+                source_url TEXT,
+                filename TEXT,
+                error_msg TEXT,
+                created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
         ''')
         db.commit()
         _migrate(db)
@@ -189,7 +214,7 @@ def init_db(app):
 def _migrate(db):
     migrations = {
         'users': {
-        'email': "ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''",
+            'email': "ALTER TABLE users ADD COLUMN email TEXT DEFAULT ''",
         },
         'user_profiles': {
             'depth': "ALTER TABLE user_profiles ADD COLUMN depth TEXT DEFAULT 'standard'",
