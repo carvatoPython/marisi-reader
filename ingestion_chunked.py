@@ -16,7 +16,6 @@ Arquitectura de procesamiento en background:
 import json, re, time
 import pdfplumber
 from openai import OpenAI
-from mery.comms import gmail_enviar
 
 # ── CONFIG ────────────────────────────────────────────────────────────────────
 PAGES_PER_CHUNK = 15       # páginas por fragmento
